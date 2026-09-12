@@ -3,7 +3,7 @@ import { useState, useMemo } from 'react'
 // Sortable table.
 // columns: [{ key, label, num?, render?(row), sortValue?(row) }]
 // initialSort: { key, dir } where dir is 'asc' | 'desc'
-export default function DataTable({ columns, rows, initialSort }) {
+export default function DataTable({ columns, rows, initialSort, onRowClick, selectedId }) {
   const [sort, setSort] = useState(initialSort ?? null)
 
   const sorted = useMemo(() => {
@@ -52,7 +52,11 @@ export default function DataTable({ columns, rows, initialSort }) {
       </thead>
       <tbody>
         {sorted.map((r, i) => (
-          <tr key={r.id ?? i}>
+          <tr
+            key={r.id ?? i}
+            className={[onRowClick ? 'row-click' : '', selectedId && r.id === selectedId ? 'row-sel' : ''].filter(Boolean).join(' ')}
+            onClick={onRowClick ? () => onRowClick(r) : undefined}
+          >
             {columns.map((c) => (
               <td key={c.key} className={[c.num ? 'num' : '', c.tdClass || ''].filter(Boolean).join(' ')}>
                 {c.render ? c.render(r) : r[c.key]}

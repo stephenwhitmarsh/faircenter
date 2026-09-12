@@ -198,6 +198,58 @@ table.data tr:last-child td { border-bottom: none; }
 .tag.ok { color: var(--good); border-color: color-mix(in srgb, var(--good) 40%, transparent); }
 .tag.org { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
 .tag.amber { color: var(--warning); border-color: color-mix(in srgb, var(--warning) 45%, transparent); }
+.tag.prio-high { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 50%, transparent); background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.tag.prio-medium { color: var(--ink-2); }
+.tag.prio-low { color: var(--muted); border-style: dashed; }
+
+/* info tooltip */
+.infotip { position: relative; display: inline-flex; vertical-align: middle; margin-left: 6px; cursor: help; outline: none; }
+.infotip-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+}
+.infotip-pop {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  width: 240px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+  padding: 8px 10px;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.45;
+  color: var(--ink-2);
+  white-space: normal;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.12s;
+}
+.infotip:hover .infotip-pop, .infotip:focus .infotip-pop, .infotip:focus-within .infotip-pop { opacity: 1; visibility: visible; }
+
+/* tag legend row */
+.legend-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--ink-2);
+}
+.legend-tags > span { display: inline-flex; align-items: center; gap: 6px; }
 
 /* small unit caption under a column header or beside a summary figure */
 .th-unit {
@@ -241,6 +293,85 @@ table.data tr:last-child td { border-bottom: none; }
 }
 .numin input:focus { outline: none; border-color: var(--accent); }
 .numin-suffix { color: var(--muted); font-size: 12px; }
+
+/* searchable scope picker */
+.scopepick { position: relative; display: inline-block; }
+.scopepick-btn {
+  background: var(--surface);
+  color: var(--ink);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 5px 10px;
+  font-size: 13px;
+  cursor: pointer;
+  min-width: 170px;
+  text-align: left;
+  display: inline-flex;
+  justify-content: space-between;
+  gap: 8px;
+  align-items: center;
+}
+.scopepick-caret { color: var(--muted); }
+.scopepick-backdrop { position: fixed; inset: 0; z-index: 20; }
+.scopepick-menu {
+  position: absolute;
+  z-index: 21;
+  top: calc(100% + 4px);
+  left: 0;
+  width: 260px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 8px 28px rgba(0,0,0,0.35);
+  padding: 8px;
+}
+.scopepick-menu input {
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--bg);
+  color: var(--ink);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 6px 8px;
+  font-size: 13px;
+  margin-bottom: 6px;
+}
+.scopepick-list { max-height: 260px; overflow-y: auto; }
+.scopepick-group { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; margin: 6px 4px 2px; }
+.scopepick-opt {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  color: var(--ink);
+  padding: 5px 8px;
+  border-radius: 6px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.scopepick-opt:hover { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.scopepick-opt.sel { color: var(--accent); font-weight: 600; }
+.scopepick-empty { color: var(--muted); font-size: 13px; padding: 6px 8px; }
+
+/* horizontal scroll for wide tables */
+.tbl-scroll { overflow-x: auto; }
+
+/* clickable data rows */
+.data tr.row-click { cursor: pointer; }
+.data tr.row-click:hover td { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.data tr.row-sel td { background: color-mix(in srgb, var(--accent) 16%, transparent); }
+
+/* text link button */
+.linkbtn {
+  background: none;
+  border: none;
+  color: var(--accent);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 0;
+  text-decoration: underline;
+}
 
 /* inline edit bar (e.g. headroom on Consumption) */
 .editbar {

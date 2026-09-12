@@ -4,12 +4,55 @@ import {
   ReferenceLine, ReferenceArea,
 } from 'recharts'
 import DataTable from '../components/DataTable.jsx'
+import InfoTip from '../components/InfoTip.jsx'
 import {
   cluster, projects, teams, people, reservations, parameters, period,
   projectOwner, ownerBucket, teamById, dailyIncrements, hourlyActualToday, forecastBuckets,
-  exhaustionDay, dayLabel, hourLabel,
+  exhaustionDay, dayLabel, hourLabel, endDay, recentDailyRate,
 } from '../data/mockData.js'
 import { useSession } from '../session.jsx'
+
+// GPU-hours a project holds by reservation on a given day-of-month (reserved
+// GPUs run around the clock for the window). Reservations are guaranteed load,
+// so they form a floor under the forecast.
+function reservedGpuHours(projectId, day) {
+  let g = 0
+  for (const r of reservations) {
+    if (r.projectId !== projectId) continue
+    const s = Number(r.start.slice(-2)), e = Number((r.end || r.start).slice(-2))
+    if (day >= s && day <= e) g += r.gpus
+  }
+  return g * 24
+}
+
+// Projected end-of-period demand if the project were NOT capped at its budget:
+// the recent (or average) rate continued to the project's end date. This is
+// planned demand, distinct from consumption, and can exceed the budget.
+function uncappedEnd(p, method = 'recent') {
+  const active = Math.max(0, endDay(p) - period.today)
+  const rate = method === 'linear' ? (period.today > 0 ? p.used / period.today : 0) : recentDailyRate(p)
+  return p.used + rate * active
+}
+
+// Cluster-level demand forecast from every project's uncapped projection: the
+// first future day projected concurrent demand exceeds daily capacity, the peak
+// as a share of it, and total projected demand for the period.
+function capacityForecast(method = 'recent') {
+  const capDaily = cluster.capacityGpuHours / period.totalDays
+  let reached = null, peak = 0
+  for (let d = period.today + 1; d <= period.totalDays; d++) {
+    let load = 0
+    for (const p of projects) {
+      if (d > endDay(p)) continue
+      const rate = method === 'linear' ? (period.today > 0 ? p.used / period.today : 0) : recentDailyRate(p)
+      load += Math.max(rate, reservedGpuHours(p.id, d))
+    }
+    peak = Math.max(peak, load)
+    if (reached === null && load > capDaily) reached = d
+  }
+  const totalDemand = projects.reduce((s, p) => s + uncappedEnd(p, method), 0)
+  return { reached, peakPct: Math.round((peak / capDaily) * 100), totalDemand }
+}
 
 const fmt = (n) => Math.round(n).toLocaleString('en-GB')
 
@@ -70,7 +113,7 @@ function horizonDays(forecast) {
   return 30
 }
 
-function buildSeries(range, units, custom, forecast) {
+function buildSeries(range, units, custom, forecast, method) {
   const allP = units.flatMap((u) => u.projects)
   const fcOn = forecast !== 'off'
 
@@ -120,7 +163,18 @@ function buildSeries(range, units, custom, forecast) {
   const dailyActual = {}, fc = {}
   for (const p of allP) {
     dailyActual[p.id] = dailyIncrements(p)
-    fc[p.id] = forecastBuckets(p, dailyActual[p.id], hd)
+    const active = Math.max(0, endDay(p) - period.today)
+    const rate = method === 'linear' ? (period.today > 0 ? p.used / period.today : 0) : recentDailyRate(p)
+    let remaining = Math.max(0, p.budget - p.used)
+    const arr = []
+    for (let i = 0; i < hd; i++) {
+      // full rate until the budget is spent, then a sharp stop; a reservation
+      // is guaranteed load, so it floors the day regardless
+      let v = i < active ? Math.min(rate, remaining) : 0
+      remaining -= v
+      arr.push(Math.max(v, reservedGpuHours(p.id, period.today + i + 1)))
+    }
+    fc[p.id] = arr
   }
   // cumulative consumed by end of day d: sum of actual increments through d,
   // then p.used plus forecast increments past today
@@ -188,7 +242,56 @@ function ChartTooltip({ active, payload, label, colourByLabel, budgetByLabel, yU
       <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid var(--border)', marginTop: 5, paddingTop: 5, fontWeight: 600 }}>
         <span>Total</span><span style={{ fontVariantNumeric: 'tabular-nums' }}>{show(total)}</span>
       </div>
+      <div style={{ color: 'var(--muted)', fontSize: 10, marginTop: 5 }}>
+        band = load at this time · % of budget = spent by this point
+      </div>
     </div>
+  )
+}
+
+// Flat, searchable list of everything the graph can be scoped to.
+function scopeOptions() {
+  const opts = [{ value: 'all', label: 'All teams', group: '' }]
+  for (const t of teams) opts.push({ value: 'team:' + t.id, label: t.name, group: 'Team' })
+  for (const p of people.filter((pp) => projects.some((pr) => pr.personId === pp.id))) opts.push({ value: 'person:' + p.id, label: p.name, group: 'Person' })
+  for (const p of projects) opts.push({ value: 'project:' + p.id, label: p.name, group: 'Project' })
+  return opts
+}
+
+function ScopePicker({ value, onChange }) {
+  const [open, setOpen] = useState(false)
+  const [q, setQ] = useState('')
+  const opts = useMemo(scopeOptions, [])
+  const current = opts.find((o) => o.value === value)?.label ?? 'All teams'
+  const ql = q.trim().toLowerCase()
+  const shown = ql ? opts.filter((o) => o.label.toLowerCase().includes(ql) || o.group.toLowerCase().includes(ql)) : opts
+  const pick = (v) => { onChange(v); setOpen(false); setQ('') }
+  return (
+    <span className="scopepick">
+      <button type="button" className="scopepick-btn" onClick={() => setOpen((o) => !o)}>
+        {current} <span className="scopepick-caret">▾</span>
+      </button>
+      {open && (
+        <>
+          <div className="scopepick-backdrop" onClick={() => setOpen(false)} />
+          <div className="scopepick-menu">
+            <input autoFocus type="search" placeholder="Search team, person or project" value={q} onChange={(e) => setQ(e.target.value)} />
+            <div className="scopepick-list">
+              {shown.length === 0 && <div className="scopepick-empty">No match</div>}
+              {shown.map((o, i) => {
+                const head = o.group && (i === 0 || shown[i - 1].group !== o.group)
+                return (
+                  <div key={o.value}>
+                    {head && <div className="scopepick-group">{o.group}</div>}
+                    <button type="button" className={'scopepick-opt' + (o.value === value ? ' sel' : '')} onClick={() => pick(o.value)}>{o.label}</button>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        </>
+      )}
+    </span>
   )
 }
 
@@ -201,13 +304,14 @@ export default function ConsumptionReservations() {
   const [custom, setCustom] = useState({ from: '2026-09-01', to: '2026-09-12' })
   const { can } = useSession()
   const [headroomPct, setHeadroomPct] = useState(Math.round(parameters.headroom.org * 100))
-  const [hrApplied, setHrApplied] = useState(false)
+  const [oversub, setOversub] = useState(parameters.oversubscriptionFactor)
+  const [admApplied, setAdmApplied] = useState(false)
 
   const subset = selectedProjects(scope)
   const units = useMemo(() => unitsForScope(scope, subset), [scope]) // eslint-disable-line react-hooks/exhaustive-deps
   const { rows, nowLabel, lastLabel, showForecast, fcLabel } = useMemo(
-    () => buildSeries(range, units, custom, forecast),
-    [range, scope, custom, forecast], // eslint-disable-line react-hooks/exhaustive-deps
+    () => buildSeries(range, units, custom, forecast, fcMethod),
+    [range, scope, custom, forecast, fcMethod], // eslint-disable-line react-hooks/exhaustive-deps
   )
   const colourByLabel = Object.fromEntries(units.map((u) => [u.label, u.colour]))
   const budgetByLabel = Object.fromEntries(units.map((u) => [u.label, u.projects.reduce((s, p) => s + p.budget, 0)]))
@@ -220,8 +324,13 @@ export default function ConsumptionReservations() {
   const headroom = Math.round(cluster.capacityGpuHours * (headroomPct / 100))
   const stillFree = cluster.capacityGpuHours - committed - headroom
   const consumedToDate = projects.reduce((s, p) => s + p.used, 0)
-  const headroomDirty = headroomPct !== Math.round(parameters.headroom.org * 100)
-  const applyHeadroom = () => { parameters.headroom.org = headroomPct / 100; setHrApplied(true) }
+  const demand = capacityForecast(fcMethod)
+  const admDirty = headroomPct !== Math.round(parameters.headroom.org * 100) || oversub !== parameters.oversubscriptionFactor
+  const applyAdmission = () => {
+    parameters.headroom.org = headroomPct / 100
+    parameters.oversubscriptionFactor = oversub
+    setAdmApplied(true)
+  }
 
   const drilled = scope !== 'all'
 
@@ -239,20 +348,7 @@ export default function ConsumptionReservations() {
 
       <div className="controls">
         <label>Scope</label>
-        <select value={scope} onChange={(e) => setScope(e.target.value)}>
-          <option value="all">All teams</option>
-          <optgroup label="Team">
-            {teams.map((t) => <option key={t.id} value={'team:' + t.id}>{t.name}</option>)}
-          </optgroup>
-          <optgroup label="Person">
-            {people.filter((p) => projects.some((pr) => pr.personId === p.id)).map((p) => (
-              <option key={p.id} value={'person:' + p.id}>{p.name}</option>
-            ))}
-          </optgroup>
-          <optgroup label="Project">
-            {projects.map((p) => <option key={p.id} value={'project:' + p.id}>{p.name}</option>)}
-          </optgroup>
-        </select>
+        <ScopePicker value={scope} onChange={setScope} />
 
         <label style={{ marginLeft: 8 }}>Range</label>
         <div className="seg">
@@ -286,24 +382,32 @@ export default function ConsumptionReservations() {
 
       <div className="tiles">
         <Tile label="Cluster capacity" value={fmt(cluster.capacityGpuHours)} note="GPU-hours / period" />
-        <Tile label="Committed budgets" value={fmt(committed)} note={pct(committed, cluster.capacityGpuHours)} />
-        <Tile label="Consumed to date" value={fmt(consumedToDate)} note={`${Math.round((consumedToDate / committed) * 100)}% of committed`} />
+        <Tile label={<>Committed budgets <InfoTip text="Planned allocations. Budgets may sum above capacity within the over-subscription factor; this is planned, not consumed." /></>} value={fmt(committed)} note={pct(committed, cluster.capacityGpuHours)} />
+        <Tile label={<>Consumed to date <InfoTip text="Actual GPU-hours run so far. Consumption can never exceed capacity, and each project is capped at its budget." /></>} value={fmt(consumedToDate)} note={`${Math.round((consumedToDate / committed) * 100)}% of committed`} />
+        <Tile label={<>Projected demand <InfoTip text="Every project's recent rate continued to its end date, uncapped and including reservations. Demand, not consumption, so it can exceed budgets." /></>} value={fmt(demand.totalDemand)} note={pct(demand.totalDemand, cluster.capacityGpuHours)} />
+        <Tile label={<>Capacity reached <InfoTip text="First day projected concurrent demand would exceed daily capacity, from all projects' uncapped forecasts plus reservations." /></>} value={demand.reached ? dayLabel(demand.reached) : '—'} note={demand.reached ? 'on projected demand' : `peak ${demand.peakPct}% of daily capacity`} />
         <Tile label="Headroom" value={fmt(headroom)} note={`${headroomPct}% held back`} />
         <Tile label="Still free" value={fmt(stillFree)} note={pct(stillFree, cluster.capacityGpuHours)} />
       </div>
 
       {can('editHeadroom') && (
         <div className="editbar">
-          <span className="perm-note perm-on">Operations</span>
-          <label>Headroom held back</label>
+          <span className="perm-note perm-on">Operations · admission control</span>
+          <label>Headroom</label>
           <span className="numin">
             <input type="number" min="0" max="50" step="1" value={headroomPct}
-              onChange={(e) => { setHeadroomPct(Number(e.target.value)); setHrApplied(false) }} style={{ width: 64 }} />
-            <span className="numin-suffix">% of capacity</span>
+              onChange={(e) => { setHeadroomPct(Number(e.target.value)); setAdmApplied(false) }} style={{ width: 60 }} />
+            <span className="numin-suffix">% held back</span>
           </span>
-          <button className="btn primary" disabled={!headroomDirty} onClick={applyHeadroom}>Apply to SLURM</button>
+          <label>Over-subscription</label>
+          <span className="numin">
+            <input type="number" min="1" max="2" step="0.05" value={oversub}
+              onChange={(e) => { setOversub(Number(e.target.value)); setAdmApplied(false) }} style={{ width: 60 }} />
+            <span className="numin-suffix">×</span>
+          </span>
+          <button className="btn primary" disabled={!admDirty} onClick={applyAdmission}>Apply to SLURM</button>
           <span className="hint">
-            {headroomDirty ? 'Staged.' : hrApplied ? 'Applied · would set the org reservation.' : 'Held free above the teams as an admission control.'}
+            {admDirty ? 'Staged.' : admApplied ? 'Applied · would set the org reservation and admission limit.' : 'A grant is allowed while committed demand ≤ capacity × (over-subscription − headroom).'}
           </span>
         </div>
       )}
@@ -323,14 +427,18 @@ export default function ConsumptionReservations() {
                 label={{ value: yUnit === 'pct' ? '% capacity' : 'GPU-h', angle: -90, position: 'insideLeft', fill: 'var(--muted)', fontSize: 11 }} />
               <Tooltip content={<ChartTooltip colourByLabel={colourByLabel} budgetByLabel={budgetByLabel} yUnit={yUnit} cap={cap} />} cursor={{ stroke: 'var(--ink-2)', strokeWidth: 1 }} />
               {showForecast && nowLabel && (
-                <ReferenceArea x1={nowLabel} x2={lastLabel} fill="var(--ink-2)" fillOpacity={0.12} label={{ value: fcLabel, fill: 'var(--ink-2)', fontSize: 11, position: 'insideTopRight' }} />
+                <ReferenceArea x1={nowLabel} x2={lastLabel} fill="var(--ink-2)" fillOpacity={0.12} />
               )}
               {units.map((u) => (
-                <Area key={u.key} type="monotone" dataKey={u.key} name={u.label} stackId="use"
+                <Area key={u.key} type="linear" dataKey={u.key} name={u.label} stackId="use"
                   stroke="var(--surface)" strokeWidth={0.5} fill={u.colour} fillOpacity={0.95}
                   activeDot={false} isAnimationActive={false} />
               ))}
               <ReferenceLine y={cap} stroke="var(--ink-2)" strokeDasharray="4 4" label={{ value: 'capacity', fill: 'var(--muted)', fontSize: 11, position: 'insideBottomRight' }} />
+              {range !== 'today' && reservations.map((r) => (
+                <ReferenceLine key={r.id} x={dayLabel(Number(r.start.slice(-2)))} stroke="var(--warning)" strokeDasharray="2 3"
+                  label={{ value: `resv ${r.gpus}`, fill: 'var(--warning)', fontSize: 10, position: 'insideTopLeft' }} />
+              ))}
               {nowLabel && <ReferenceLine x={nowLabel} stroke="var(--ink)" strokeWidth={2} ifOverflow="visible" label={{ value: 'now', fill: 'var(--ink)', fontSize: 11, fontWeight: 600, position: 'top' }} />}
             </AreaChart>
           </ResponsiveContainer>
@@ -348,9 +456,9 @@ export default function ConsumptionReservations() {
           {drilled
             ? 'Each band is one project in the scoped team; the stack is that team’s load.'
             : 'Each band is one team’s total consumption (with personal and organisation work separate); the stack is the whole cluster’s load. Scope to a team to split its band into projects.'}
-          {' '}Right of the “now” line is forecast over the chosen horizon, capped so a
-          project never draws more than the budget it has left. The dashed line marks
-          nominal cluster capacity.
+          {' '}Right of the “now” line is forecast over the chosen horizon. The dashed line
+          marks nominal cluster capacity; amber markers show reservation windows, whose
+          held GPUs floor the forecast so they appear as a bump on the load.
         </p>
       </div>
 
@@ -367,7 +475,14 @@ export default function ConsumptionReservations() {
             </select>
           </span>
         </div>
+        <p className="hint" style={{ marginTop: 0 }}>
+          Select a row to show that project’s forecast in the chart above.
+          {drilled && <> <button className="linkbtn" onClick={() => setScope('all')}>Back to all teams</button></>}
+        </p>
+        <div className="tbl-scroll">
         <DataTable
+          onRowClick={(p) => setScope('project:' + p.id)}
+          selectedId={scope.startsWith('project:') ? scope.split(':')[1] : null}
           initialSort={{ key: 'budget', dir: 'desc' }}
           columns={[
             { key: 'name', label: 'Project', render: (p) => (p.funding === 'person' ? <span className="tag">personal</span> : p.name) },
@@ -384,37 +499,43 @@ export default function ConsumptionReservations() {
               ),
             },
             {
-              key: 'forecast', label: 'Forecast use', num: true, thClass: 'fc-col fc-first', tdClass: 'fc-col fc-first',
+              key: 'forecast', label: <>Forecast use <InfoTip text="Projected consumption, capped at the budget: what will actually run." /></>, num: true, thClass: 'fc-col fc-first', tdClass: 'fc-col fc-first',
               sortValue: (p) => forecastEnd(p, fcMethod),
               render: (p) => fmt(forecastEnd(p, fcMethod)),
+            },
+            {
+              key: 'demand', label: <>Demand <InfoTip text="Projected demand if uncapped, including reservations. Planned load, so it can exceed the budget." /></>, num: true, thClass: 'fc-col', tdClass: 'fc-col',
+              sortValue: (p) => uncappedEnd(p, fcMethod),
+              render: (p) => fmt(uncappedEnd(p, fcMethod)),
+            },
+            {
+              key: 'over', label: 'Over budget', num: true, thClass: 'fc-col', tdClass: 'fc-col',
+              sortValue: (p) => Math.max(0, uncappedEnd(p, fcMethod) - p.budget),
+              render: (p) => {
+                const o = Math.max(0, Math.round(uncappedEnd(p, fcMethod) - p.budget))
+                return o > 0 ? <span className="tag warn">+{fmt(o)}</span> : <span className="hint">—</span>
+              },
             },
             {
               key: 'exhaust', label: 'Budget runs out', thClass: 'fc-col', tdClass: 'fc-col',
               sortValue: (p) => exhaustBy(p, fcMethod) ?? 999,
               render: (p) => {
                 const d = exhaustBy(p, fcMethod)
-                return d ? <span className="tag warn">~{dayLabel(d)}</span> : <span className="hint">within budget</span>
-              },
-            },
-            {
-              key: 'daysleft', label: 'Days left', num: true, thClass: 'fc-col', tdClass: 'fc-col',
-              sortValue: (p) => { const d = exhaustBy(p, fcMethod); return d ? d - period.today : 999 },
-              render: (p) => {
-                const d = exhaustBy(p, fcMethod)
-                if (!d) return <span className="hint">—</span>
-                return <span className="tag warn">{Math.max(0, d - period.today)}</span>
+                return d ? <span className="tag warn">~{dayLabel(d)} ({Math.max(0, d - period.today)}d)</span> : <span className="hint">within budget</span>
               },
             },
           ]}
           rows={projects}
         />
+        </div>
         <p className="hint">
-          The three shaded columns are forecast to the end of the period ({dayLabel(period.totalDays)}).
-          The model behind them is chosen above: “recent rate” continues each project’s
-          last few days and caps at its budget; “linear from start” extends the average
-          rate so far. Spline and learned models are where trained predictors will plug in.
-          “Budget runs out” and “Days left” turn red for any project on track to hit its
-          cap before the period ends.
+          The shaded columns are forecast to the end of the period ({dayLabel(period.totalDays)}),
+          using the model chosen above (recent rate or linear; spline and learned models
+          are where trained predictors will plug in). <b>Forecast use</b> is projected
+          consumption, capped at the budget: what will actually run. <b>Demand</b> is the
+          same projection uncapped and including reservations, so <b>Over budget</b> shows
+          how far a project threatens to exceed its budget. <b>Budget runs out</b> is when
+          consumption would hit the cap.
         </p>
       </div>
 
@@ -440,19 +561,21 @@ export default function ConsumptionReservations() {
 // 'linear' extends the average rate since the period start.
 function forecastEnd(p, method = 'recent') {
   const steps = period.totalDays - period.today
+  const active = Math.max(0, endDay(p) - period.today)
   if (method === 'linear') {
     const rate = period.today > 0 ? p.used / period.today : 0
-    return Math.min(p.budget, p.used + rate * steps)
+    return Math.min(p.budget, p.used + rate * Math.min(steps, active))
   }
-  const fc = forecastBuckets(p, dailyIncrements(p), steps)
+  const fc = forecastBuckets(p, dailyIncrements(p), steps, active)
   return p.used + fc.reduce((s, v) => s + v, 0)
 }
 
 // Day the project exhausts its budget under the chosen model, or null if it
 // stays within budget through the period.
 function exhaustBy(p, method = 'recent') {
+  const active = Math.max(0, endDay(p) - period.today)
   if (method === 'linear') return exhaustionDay(p)
-  const fc = forecastBuckets(p, dailyIncrements(p), period.totalDays - period.today)
+  const fc = forecastBuckets(p, dailyIncrements(p), period.totalDays - period.today, active)
   let remaining = p.budget - p.used
   for (let i = 0; i < fc.length; i++) {
     remaining -= fc[i]

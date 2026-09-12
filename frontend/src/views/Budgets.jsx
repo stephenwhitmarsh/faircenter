@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import {
-  teams, people, projects, pctOfOrg, orgPool, projectOwner, projectRank, ordinal,
+  teams, people, projects, pctOfOrg, projectOwner, priorityTier,
 } from '../data/mockData.js'
 
 const fmt = (n) => n.toLocaleString('en-GB')
@@ -19,6 +19,12 @@ function ProjectName({ p }) {
       {!p.teamId && p.funding !== 'person' && <span className="tag amber" style={{ marginLeft: 6 }}>no team</span>}
     </>
   )
+}
+
+function PriorityTag({ p }) {
+  const t = priorityTier(p)
+  if (!t) return <span className="hint">n/a</span>
+  return <span className={'tag prio-' + t}>{t}</span>
 }
 
 export default function Budgets() {
@@ -55,15 +61,20 @@ export default function Budgets() {
       <div className="view-head">
         <h2 className="view-title">Budgets</h2>
         <p className="view-intro">
-          GPU budgets by team and project. Projects sit under their team; a tag marks
-          any that draw on the org pool by design (<span className="tag org">org pool</span>)
-          or have no owning team yet (<span className="tag amber">no team</span>), and
-          personal work carries a <span className="tag">personal</span> tag. Projects with
-          no team are collected under “No owning team”. Budgets are GPU-hours, with each
-          shown as a share of the org pool ({fmt(orgPool)} GPU-h). Rank is the owner’s
-          ordering within the pool, a tie-break only; arbitration between pools is by
-          budget share through SLURM fair-tree, so only the order matters, not the number.
-          Who works on each project is in the People tab.
+          GPU budgets by team and project, in GPU-hours and as a share of the org pool.
+          Each project sits under its owning team, or under “No owning team” when it has
+          none. Priority is a tie-break, not the arbiter between pools: that follows
+          budget share through fair-tree. Who works on each project is in the People tab.
+        </p>
+        <div className="legend-tags">
+          <span><span className="tag org">org pool</span> draws on the org pool by design</span>
+          <span><span className="tag amber">no team</span> no owning team yet</span>
+          <span><span className="tag">personal</span> a person’s own budget</span>
+          <span><span className="tag prio-high">high</span> <span className="tag prio-low">low</span> priority tie-break</span>
+        </div>
+        <p className="hint" style={{ marginTop: 8 }}>
+          Priority order for a job: reservation (held GPUs) → account standing from budget
+          share → project tier as tie-break → the lane the engineer picks → age while it waits.
         </p>
       </div>
 
@@ -139,22 +150,19 @@ function ProjectTable({ rows }) {
         <tr>
           <th>Name</th>
           <th className="num">Budget<br /><span className="th-unit">GPU-h (% of pool)</span></th>
-          <th className="num">Rank<br /><span className="th-unit">in pool</span></th>
+          <th>Priority</th>
           <th>Dates</th>
         </tr>
       </thead>
       <tbody>
-        {rows.map((p) => {
-          const r = projectRank(p)
-          return (
-            <tr key={p.id}>
-              <td><ProjectName p={p} /></td>
-              <td className="num">{budgetCell(p.budget)}</td>
-              <td className="num">{r ? <>{ordinal(r.rank)} <span className="th-unit">of {r.of}</span></> : <span className="hint">n/a</span>}</td>
-              <td>{p.funding === 'person' ? <span className="hint">n/a</span> : `${p.start} to ${p.end}`}</td>
-            </tr>
-          )
-        })}
+        {rows.map((p) => (
+          <tr key={p.id}>
+            <td><ProjectName p={p} /></td>
+            <td className="num">{budgetCell(p.budget)}</td>
+            <td><PriorityTag p={p} /></td>
+            <td>{p.funding === 'person' ? <span className="hint">n/a</span> : `${p.start} to ${p.end}`}</td>
+          </tr>
+        ))}
       </tbody>
     </table>
   )

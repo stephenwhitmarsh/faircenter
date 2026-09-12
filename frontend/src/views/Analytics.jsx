@@ -2,6 +2,7 @@ import {
   LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine,
 } from 'recharts'
 import DataTable from '../components/DataTable.jsx'
+import InfoTip from '../components/InfoTip.jsx'
 import { projects, teams, history, cluster } from '../data/mockData.js'
 
 const C_LINE = '#2a78d6'
@@ -28,7 +29,7 @@ export default function Analytics() {
       </div>
 
       <div className="card">
-        <div className="card-title">Cluster utilisation by month</div>
+        <div className="card-title">Cluster utilisation by month <InfoTip text="Share of the cluster's available GPU-hours actually consumed each month. Rising utilisation means demand is catching up with capacity." /></div>
         <div style={{ width: '100%', height: 240 }}>
           <ResponsiveContainer>
             <LineChart data={history} margin={{ top: 6, right: 12, left: 8, bottom: 4 }}>
@@ -40,11 +41,10 @@ export default function Analytics() {
             </LineChart>
           </ResponsiveContainer>
         </div>
-        <p className="note">Utilisation has climbed month on month, a sign demand is catching up with capacity.</p>
       </div>
 
       <div className="card">
-        <div className="card-title">Committed demand vs capacity by month</div>
+        <div className="card-title">Committed demand vs capacity by month <InfoTip text="Total granted budgets each month against the dashed capacity line. As the bars approach the line, the case for more hardware grows." /></div>
         <div style={{ width: '100%', height: 240 }}>
           <ResponsiveContainer>
             <BarChart data={history} margin={{ top: 6, right: 12, left: 8, bottom: 4 }}>
@@ -57,7 +57,6 @@ export default function Analytics() {
             </BarChart>
           </ResponsiveContainer>
         </div>
-        <p className="note">Committed demand is nearing capacity, the case for the next hardware investment.</p>
       </div>
 
       <div className="card">

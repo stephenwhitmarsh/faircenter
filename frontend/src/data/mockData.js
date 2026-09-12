@@ -36,9 +36,9 @@ export const cluster = {
 }
 
 export const teams = [
-  { id: 't-pre', name: 'Pretraining', budget: 10000 },
+  { id: 't-pre', name: 'Pretraining', budget: 9000 },
   { id: 't-ft', name: 'Fine-tuning', budget: 5000 },
-  { id: 't-eval', name: 'Evaluation', budget: 1500 },
+  { id: 't-eval', name: 'Evaluation', budget: 3000 },
 ]
 
 // teamIds: teams a person belongs to (many-to-many; a multi-domain expert can
@@ -78,19 +78,24 @@ export const lanes = {
 }
 
 // funding: 'team' draws on the team budget, 'person' on a personal budget,
-// 'org' directly on the org pool.
+// 'org' directly on the org pool. priority is a three-tier tie-break
+// ('high' | 'medium' | 'low'), used only to order projects that would
+// otherwise be even; it does not set arbitration between pools. Dates are
+// staggered so projects start and finish at different points in the period.
 export const projects = [
-  { id: 'prj-base', name: 'Base model v3', funding: 'team', teamId: 't-pre', budget: 7000, used: 3100, priority: 60, start: '2026-09-01', end: '2026-09-30' },
-  { id: 'prj-datapipe', name: 'Data pipeline', funding: 'team', teamId: 't-pre', budget: 3000, used: 1300, priority: 40, start: '2026-09-01', end: '2026-09-30' },
-  { id: 'prj-instruct', name: 'Instruct tuning', funding: 'team', teamId: 't-ft', budget: 3250, used: 1900, priority: 55, start: '2026-09-01', end: '2026-09-30' },
-  { id: 'prj-rlhf', name: 'RLHF experiments', funding: 'team', teamId: 't-ft', budget: 1750, used: 450, priority: 35, start: '2026-09-05', end: '2026-09-30' },
-  { id: 'prj-bench', name: 'Benchmark suite', funding: 'team', teamId: 't-eval', budget: 1750, used: 1050, priority: 45, start: '2026-09-01', end: '2026-09-30' },
-  { id: 'prj-redteam', name: 'Red-team evals', funding: 'team', teamId: 't-eval', budget: 1250, used: 700, priority: 50, start: '2026-09-01', end: '2026-09-30' },
-  { id: 'prj-sched', name: 'Ada Lovelace (personal)', funding: 'person', personId: 'p-ada', budget: 150, used: 60, priority: 1, start: '2026-09-01', end: '2026-09-30' },
-  { id: 'prj-probe', name: 'Ravi Patel (personal)', funding: 'person', personId: 'p-ravi', budget: 150, used: 125, priority: 1, start: '2026-09-01', end: '2026-09-30' },
-  { id: 'prj-safety', name: 'Safety audit', funding: 'org', teamId: 't-eval', budget: 1250, used: 650, priority: 80, start: '2026-09-01', end: '2026-09-30' },
-  { id: 'prj-infra', name: 'Infra benchmarking', funding: 'org', budget: 750, used: 200, priority: 30, start: '2026-09-08', end: '2026-09-30' },
+  { id: 'prj-base', name: 'Base model v3', funding: 'team', teamId: 't-pre', budget: 7000, used: 2900, priority: 'high', start: '2026-09-01', end: '2026-09-30' },
+  { id: 'prj-datapipe', name: 'Data pipeline', funding: 'team', teamId: 't-pre', budget: 1500, used: 1380, priority: 'medium', start: '2026-09-01', end: '2026-09-13' },
+  { id: 'prj-instruct', name: 'Instruct tuning', funding: 'team', teamId: 't-ft', budget: 3000, used: 1500, priority: 'high', start: '2026-09-04', end: '2026-09-26' },
+  { id: 'prj-rlhf', name: 'RLHF experiments', funding: 'team', teamId: 't-ft', budget: 1800, used: 500, priority: 'low', start: '2026-09-08', end: '2026-09-30' },
+  { id: 'prj-bench', name: 'Benchmark suite', funding: 'team', teamId: 't-eval', budget: 1600, used: 1050, priority: 'medium', start: '2026-09-01', end: '2026-09-18' },
+  { id: 'prj-redteam', name: 'Red-team evals', funding: 'team', teamId: 't-eval', budget: 1200, used: 600, priority: 'medium', start: '2026-09-06', end: '2026-09-22' },
+  { id: 'prj-sched', name: 'Ada Lovelace (personal)', funding: 'person', personId: 'p-ada', budget: 150, used: 60, priority: 'low', start: '2026-09-01', end: '2026-09-30' },
+  { id: 'prj-probe', name: 'Ravi Patel (personal)', funding: 'person', personId: 'p-ravi', budget: 150, used: 120, priority: 'low', start: '2026-09-05', end: '2026-09-20' },
+  { id: 'prj-safety', name: 'Safety audit', funding: 'org', teamId: 't-eval', budget: 1250, used: 300, priority: 'high', start: '2026-09-10', end: '2026-09-30' },
+  { id: 'prj-infra', name: 'Infra benchmarking', funding: 'org', budget: 700, used: 450, priority: 'low', start: '2026-09-03', end: '2026-09-16' },
 ]
+
+export const PRIORITY = { high: { label: 'high', rank: 3 }, medium: { label: 'medium', rank: 2 }, low: { label: 'low', rank: 1 } }
 
 export const reservations = [
   { id: 'r-base', projectId: 'prj-base', label: 'Full-cluster training run', gpus: 16, start: '2026-09-20', end: '2026-09-22' },
@@ -149,20 +154,18 @@ export function ownerBucket(prj) {
 
 export function pctOfOrg(v) { return Math.round((v / orgPool) * 100) }
 
-// Ordinal rank of a project within its owning pool (its team, or the org pool
-// for teamless projects). Between-pool arbitration is by budget share via SLURM
-// fair-tree; this rank is only the owner's ordering inside the pool, so its
-// magnitude carries no meaning, only its order. Personal projects have no rank.
-export function projectRank(project) {
+// Priority tier of a project: high / medium / low, used only as a tie-break
+// within a pool. Personal projects carry no tier.
+export function priorityTier(project) {
   if (project.funding === 'person') return null
-  const key = project.teamId ?? null
-  const pool = projects.filter((p) => p.funding !== 'person' && (p.teamId ?? null) === key)
-  const sorted = [...pool].sort((a, b) => b.priority - a.priority)
-  return { rank: sorted.findIndex((p) => p.id === project.id) + 1, of: pool.length }
+  return project.priority || 'medium'
 }
-export function ordinal(n) {
-  const s = ['th', 'st', 'nd', 'rd'], v = n % 100
-  return n + (s[(v - 20) % 10] || s[v] || s[0])
+
+// Day-of-month a project ends within the period (clamped to the period).
+export function endDay(project) {
+  if (!project.end) return period.totalDays
+  const d = Number(project.end.slice(-2))
+  return Math.min(period.totalDays, Math.max(1, d))
 }
 
 // deterministic pseudo-random so the synthetic series is stable across renders
@@ -240,16 +243,23 @@ function recentRate(values, n = 3) {
   return tail.reduce((s, v) => s + v, 0) / tail.length
 }
 
+// A project's recent daily consumption rate (GPU-h/day), used to project
+// future demand.
+export function recentDailyRate(project) { return recentRate(dailyIncrements(project)) }
+
 // Forecast future buckets by continuing the recent rate, but never spending
 // more than the budget still has left: each bucket is capped by the remaining
 // budget, so the forecast tapers to zero as a project exhausts its budget.
 // Returns an array of `steps` forecast values.
-export function forecastBuckets(project, actualValues, steps) {
+// activeSteps optionally caps how many future buckets the project is still
+// running for (used for daily forecasts so a project stops drawing at its end
+// date). Buckets beyond it are zero.
+export function forecastBuckets(project, actualValues, steps, activeSteps = Infinity) {
   const rate = recentRate(actualValues)
   let remaining = Math.max(0, project.budget - project.used)
   const out = []
   for (let i = 0; i < steps; i++) {
-    const v = Math.min(rate, remaining)
+    const v = i < activeSteps ? Math.min(rate, remaining) : 0
     out.push(v)
     remaining -= v
   }

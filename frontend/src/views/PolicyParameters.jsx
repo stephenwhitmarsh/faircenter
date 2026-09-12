@@ -12,14 +12,13 @@ const LANE_EXAMPLE = {
 // A flat, editable view of the policy numbers. Snapshot so edits stage locally
 // and only touch the live parameters (and, in production, SLURM) on Apply.
 function snapshot() {
-  const { lanes, timeOfUse, weights, oversubscriptionFactor } = parameters
+  const { lanes, timeOfUse, weights } = parameters
   return {
     lane: Object.fromEntries(Object.keys(lanes).map((k) => [k, { factor: lanes[k].factor, priority: lanes[k].priority }])),
     touOffice: timeOfUse.office,
     touOff: timeOfUse.off,
-    accountVsLane: weights.accountVsLane,
+    laneVsProject: weights.accountVsLane,
     teamVsProject: weights.teamVsProject,
-    oversub: oversubscriptionFactor,
   }
 }
 
@@ -30,8 +29,7 @@ function slurmCommands(d) {
     cmds.push(`sacctmgr modify qos ${k} set UsageFactor=${d.lane[k].factor.toFixed(2)} Priority=${d.lane[k].priority}`)
   }
   cmds.push(`scontrol update PriorityWeightTRESBillingOffHours=${d.touOff.toFixed(2)}`)
-  cmds.push(`# fairshare blend: account-vs-lane ${d.accountVsLane.toFixed(2)}, team-vs-project ${d.teamVsProject.toFixed(2)}`)
-  cmds.push(`# admission: over-subscription ${d.oversub.toFixed(2)}x`)
+  cmds.push(`# fairshare blend: lane-vs-project ${d.laneVsProject.toFixed(2)}, team-vs-project ${d.teamVsProject.toFixed(2)}`)
   return cmds
 }
 
@@ -58,9 +56,8 @@ export default function PolicyParameters() {
     }
     parameters.timeOfUse.office = draft.touOffice
     parameters.timeOfUse.off = draft.touOff
-    parameters.weights.accountVsLane = draft.accountVsLane
+    parameters.weights.accountVsLane = draft.laneVsProject
     parameters.weights.teamVsProject = draft.teamVsProject
-    parameters.oversubscriptionFactor = draft.oversub
     setApplied({ at: new Date(), cmds: slurmCommands(draft) })
   }
   function discard() { setDraft(snapshot()); }
@@ -108,19 +105,18 @@ export default function PolicyParameters() {
                 <td className="num">
                   {editable ? (
                     <span className="inline-edit">
-                      <NumIn value={draft.lane[k].factor} step={0.05} onChange={(v) => setLane(k, 'factor', v)} suffix="×" />
-                      <NumIn value={draft.lane[k].priority} step={10} onChange={(v) => setLane(k, 'priority', v)} width={64} />
+                      <NumIn value={draft.lane[k].factor} step={0.05} onChange={(v) => setLane(k, 'factor', v)} suffix="× draw" />
+                      <NumIn value={draft.lane[k].priority} step={10} onChange={(v) => setLane(k, 'priority', v)} width={64} suffix="queue" />
                     </span>
-                  ) : `${draft.lane[k].factor.toFixed(2)}× · ${draft.lane[k].priority > 0 ? '+' : ''}${draft.lane[k].priority}`}
+                  ) : `${draft.lane[k].factor.toFixed(2)}× draw · ${draft.lane[k].priority > 0 ? '+' : ''}${draft.lane[k].priority} queue`}
                 </td>
                 <td style={{ color: 'var(--ink-2)' }}><code>{LANE_EXAMPLE[k]}</code></td>
               </tr>
             ))}
             <ValueRow label="Time of use, office hours" k="touOffice" draft={draft} editable={editable} step={0.05} suffix="×" onChange={setField} note="weight on budget drawn in office hours" />
             <ValueRow label="Time of use, off hours" k="touOff" draft={draft} editable={editable} step={0.05} suffix="×" onChange={setField} note="cheaper, to shift load off-hours" />
-            <ValueRow label="Account vs lane weight" k="accountVsLane" draft={draft} editable={editable} step={0.05} onChange={setField} note="how far a lane can lift a job above account standing" />
+            <ValueRow label="Lane vs project weight" k="laneVsProject" draft={draft} editable={editable} step={0.05} onChange={setField} note="how far the lane an engineer picks can lift a job above its project standing" />
             <ValueRow label="Team vs project weight" k="teamVsProject" draft={draft} editable={editable} step={0.05} onChange={setField} note="blend of team standing and project standing" />
-            <ValueRow label="Over-subscription factor" k="oversub" draft={draft} editable={editable} step={0.05} suffix="×" onChange={setField} note="how far granted demand may exceed capacity" />
           </tbody>
         </table>
 
@@ -137,18 +133,6 @@ export default function PolicyParameters() {
             <pre>{applied.cmds.join('\n')}</pre>
           </div>
         )}
-
-        <p className="hint">
-          Lane is chosen per job at submission via the QOS. Draw factor maps to the QOS
-          UsageFactor and queue priority to the QOS Priority. Whether lanes are offered
-          at all is the “Priced urgency” switch above.
-        </p>
-        <p className="note">
-          The over-subscription factor is an admission control: it sets how far granted
-          demand may exceed raw capacity. Headroom, the other admission control, is set
-          on the Consumption &amp; reservations tab, where it is read against the live
-          consumption picture.
-        </p>
       </div>
 
       <div className="card">
