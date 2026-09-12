@@ -92,7 +92,7 @@ graph TD
 ```
 
 ## Who decides what
-Direction sets the priorities that say what matters most at the moment. Operations sizes the budgets, which is a question of capacity and cost. A team leader, where there is one, divides the team's budget across its projects. An engineer chooses the lane for each job, within the budget already granted. Each decision sits with whoever holds the relevant information, and the app carries them into the scheduler. Direction and operations can each ask the other to change priorities, one proposing and the other confirming.
+Direction sets the priorities that say what matters most at the moment. Operations sizes the budgets, which is a question of capacity and cost. A team leader, where there is one, divides the team's budget across its projects. An engineer chooses the lane for each job, within the budget already granted. A project's rank is the team leader's ordering within its pool and is only a tie-break; arbitration between pools follows the budget shares through SLURM's fair-tree, so the rank's magnitude carries no meaning, only its order. Each decision sits with whoever holds the relevant information, and the app carries them into the scheduler. Direction and operations can each ask the other to change priorities, one proposing and the other confirming.
 
 ```mermaid
 graph TD
@@ -109,13 +109,13 @@ graph TD
 The app is organised into a few views, each with its own audience and job.
 
 ### People, teams and projects
-People, teams and projects are imported from Notion and administered here. Each project carries its own record: the budget requested and the budget granted, its start and end, and the priority it holds. Budgets are shown in GPU-hours and as a share of the org pool, and the tables sort by any column. Lane is not a project attribute, since it is chosen per job at submission. This is where the imported structure is checked and kept in step with Notion.
+People, teams and projects are imported from Notion and administered here. Each project carries its own record: the budget requested and the budget granted, its start and end, and its rank within its pool. Budgets are shown in GPU-hours and as a share of the org pool, and the tables sort by any column. Lane is not a project attribute, since it is chosen per job at submission. This is where the imported structure is checked and kept in step with Notion.
 
 ### Consumption and reservations
-This view shows the load on the cluster over time: each project's consumption stacked into the total, by hour for the current day and by date over longer ranges, and it can be scoped to a team, a project or a person. It carries the reservations that hold GPUs for set windows. Past the current moment the load is forecast from each project's recent rate, capped at the budget it has left, so the forecast tapers as budgets run down. A project on track to exhaust its budget before the period ends is flagged with the date. Expected use is therefore never shown above budget, because the budget is a hard cap that stops a project's jobs once it is reached.
+This view shows the load on the cluster over time: each project's consumption stacked into the total, by hour for the current day and by date over longer ranges, and it can be scoped to a team, a project or a person. It carries the reservations that hold GPUs for set windows. Past the current moment the load is forecast from each project's recent rate, capped at the budget it has left, so the forecast tapers as budgets run down. A project on track to exhaust its budget before the period ends is flagged with the date. Operations sets the organisation's headroom here, since it is judged against this same picture. Expected use is therefore never shown above budget, because the budget is a hard cap that stops a project's jobs once it is reached.
 
 ### Policy and parameters
-The parameters that drive allocation live here: the lane prices, the time-of-use weights, the priority weights, and the headroom shares. Each mechanism has an on/off switch, and the lanes are listed with the SLURM QOS a job submits with. They are editable only by operations and visible to everyone, so the rules that decide allocation are open to all even though one role sets them. Headroom per team and per project is not approved case by case: it is a single percentage set here and applied automatically at each level when a budget is granted, so an approved budget is already net of the headroom held back.
+The parameters that drive allocation live here: the lane prices, the time-of-use weights, and the priority weights. Each mechanism has an on/off switch, and the lanes are listed with the SLURM QOS a job submits with. They are editable only by operations and visible to everyone, so the rules that decide allocation are open to all even though one role sets them. Changes are staged and take effect only when operations applies them, at which point the app writes them to the scheduler. Headroom is set apart from these, on the Consumption view, where it is read against the live consumption picture; it is a single percentage applied automatically at each level when a budget is granted, so an approved budget is already net of the headroom held back.
 
 Alongside the parameters sit the indicators that measure whether they are set well, so the evidence for tuning is next to the settings it informs. They include how long jobs wait before they run, by lane and by time of day; how much of a budget is consumed at the halfway point of a period and at its end, which shows whether budgets are sized and paced sensibly; how often extensions and budget or priority changes are requested, and how often they are granted; how much headroom and reserved time went unused; and the spread of use across projects against the priority each was given.
 
@@ -256,7 +256,7 @@ SLURM's fairshare, in its default form, ranks whole teams before the projects in
 A proposal's budget, spread over its window, gives an expected demand curve, taken as flat by default so that the average concurrent demand is the budget divided by the duration. Real training loads tend to rise towards a deadline, so once a project is running the actual use and its remaining budget are trusted over the estimate. Summed across projects, the demand curves are checked against capacity when a budget is granted: committed demand over any overlapping window must stay within `capacity × (over-subscription factor − headroom)`. The factor starts close to one, so the organisation does not promise more than exists, and it can be raised once real use shows how fully budgets are consumed. Budgets over-committed in this way are safe because projects rarely peak together and the scheduler smooths the rest. Committed budgets run for the life of the project and are not re-cut each cycle. Direction can reduce a running budget for more urgent work, which is a rare manual step rather than routine.
 
 ### Parameters
-Every tunable value the app holds, with how it is used. All are set in the policy view, editable only by operations, and visible to everyone.
+Every tunable value the app holds, with how it is used. They are editable only by operations and visible to everyone, set in the policy view except headroom, which is set on the Consumption view. Edits are staged and written to the scheduler only on an explicit apply.
 
 - `budget` is the cap on how much a pool or project may consume over a period, in weighted GPU-hours.
 - `headroom` is the share of capacity kept ungranted as a buffer, held at each level (org, team, project).
@@ -277,7 +277,7 @@ The entities the app stores, beyond what it reads live from the scheduler:
 - People, teams and projects, imported from Notion and keyed to the app's own stable identifiers.
 - Membership links, a person in a project and a project in a team, effective-dated so past structure can be rebuilt.
 - Pools and budgets at org, team, project and person level, each with its headroom.
-- Proposals and the allocations they become, holding requested and granted quota, start, end, priority, and funding source.
+- Proposals and the allocations they become, holding requested and granted quota, start, end, rank within the pool, and funding source.
 - Reservations, each holding GPUs for a window for a named holder.
 - Usage records read from the scheduler, by account, lane, GPU-hours and time.
 - Change requests, each with a type (new project, budget change, priority change), a status, and the approver it is routed to.
@@ -289,6 +289,9 @@ The reconstructable history relied on in the risk assessment depends on the app 
 
 ### Source of truth and identity
 For the proof of concept Notion holds people, projects, teams and their composition. The app keys everything to its own stable identifiers mapped to Notion records, so a rename or a move updates a link rather than breaking it. Identity is taken from Notion where possible, otherwise from a name, email and password matched to the Notion records. Whether projects are defined in the app or in Notion, and whether Notion is read through its API or directly from its database, are still to be decided.
+
+### Roles and permissions
+The app has three roles, taken from the organisation's identity provider in production and simulated by a switcher in the proof of concept. A viewer sees everything and changes nothing. A team lead orders and staffs their own team's projects and raises requests. Operations sets the policy values, headroom and capacity, approves requests, and is the only role that writes to the scheduler. Every change that reaches the scheduler is staged first and applied explicitly, so it can be reviewed and logged with who made it and when, which is also what versions the parameters for the tuning indicators.
 
 ### Importing associations
 The app is built around three relationships, all imported from Notion.
