@@ -1,0 +1,14 @@
+# dependencies
+node_modules/
+# build output
+dist/
+frontend/dist/
+# scratch / staging
+.stage/
+# logs
+*.log
+npm-debug.log*
+# os / editor
+.DS_Store
+.vscode/
+vite.config.js.timestamp-*.mjs

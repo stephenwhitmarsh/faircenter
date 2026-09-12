@@ -109,20 +109,20 @@ graph TD
 The app is organised into a few views, each with its own audience and job.
 
 ### People, teams and projects
-People, teams and projects are imported from Notion and administered here. Each project carries its own record: the quota requested and the quota granted, its start and end, and the priority it holds. This is where the imported structure is checked and kept in step with Notion.
+People, teams and projects are imported from Notion and administered here. Each project carries its own record: the budget requested and the budget granted, its start and end, and the priority it holds. Budgets are shown in GPU-hours and as a share of the org pool, and the tables sort by any column. Lane is not a project attribute, since it is chosen per job at submission. This is where the imported structure is checked and kept in step with Notion.
 
 ### Consumption and reservations
-This view shows GPU use by person, team and project across each period, together with reservations and the total consumed. It also shows expected consumption for each budget, at first as the remaining budget divided by the remaining time, and later from a model trained on past use, so a project heading for over-use or under-use can be seen before the period ends.
+This view shows the load on the cluster over time: each project's consumption stacked into the total, by hour for the current day and by date over longer ranges, and it can be scoped to a team, a project or a person. It carries the reservations that hold GPUs for set windows. Past the current moment the load is forecast from each project's recent rate, capped at the budget it has left, so the forecast tapers as budgets run down. A project on track to exhaust its budget before the period ends is flagged with the date. Expected use is therefore never shown above budget, because the budget is a hard cap that stops a project's jobs once it is reached.
 
 ### Policy and parameters
-The parameters that drive allocation live here: the lane prices, the time-of-use weights, the priority weights, and the headroom shares. They are editable only by operations and visible to everyone, so the rules that decide allocation are open to all even though one role sets them.
+The parameters that drive allocation live here: the lane prices, the time-of-use weights, the priority weights, and the headroom shares. Each mechanism has an on/off switch, and the lanes are listed with the SLURM QOS a job submits with. They are editable only by operations and visible to everyone, so the rules that decide allocation are open to all even though one role sets them. Headroom per team and per project is not approved case by case: it is a single percentage set here and applied automatically at each level when a budget is granted, so an approved budget is already net of the headroom held back.
 
 Alongside the parameters sit the indicators that measure whether they are set well, so the evidence for tuning is next to the settings it informs. They include how long jobs wait before they run, by lane and by time of day; how much of a budget is consumed at the halfway point of a period and at its end, which shows whether budgets are sized and paced sensibly; how often extensions and budget or priority changes are requested, and how often they are granted; how much headroom and reserved time went unused; and the spread of use across projects against the priority each was given.
 
 Each indicator points to a lever. Long waits in a lane point to its price, a period-end scramble to budget sizing, a flood of change requests to budgets set too tight at the start. Because every parameter is versioned with the date it changed, each indicator can be tracked over time and read against the parameters in force when it was measured, so the effect of a change can be seen rather than guessed. A cut in average wait after a lane reprice, or a fall in extension requests after budgets are loosened, shows up next to the setting that caused it.
 
 ### Analytics
-Longer-run analysis of the cluster for direction: the percentage of GPU time used in a given period, broken down by project, team and person, and where demand is rising against the hardware available. This is the evidence for priority and investment decisions. The indicators that measure the allocation system itself sit with the parameters they tune, not here.
+Longer-run analysis for direction, across periods rather than within one: how utilisation and committed demand are trending month on month against the hardware, and where use concentrates by team. This is the evidence for priority and investment decisions, distinct from the current-period detail in Consumption. The indicators that measure the allocation system itself sit with the parameters they tune, not here.
 
 ### Requests for changes
 Anyone can ask for a change here: a new project, or a change to a project's budget or priority. Each request is routed to the next person up for approval. If a change would take a pool past its known limits, the app warns before the request is submitted.
@@ -269,7 +269,7 @@ Every tunable value the app holds, with how it is used. All are set in the polic
 - `account-vs-lane weight` caps how far a lane can lift a job above account standing, in `job priority = account standing + account-vs-lane weight × lane priority + age`.
 - `age` is the priority a job gains from waiting, rising the longer it sits in the queue so that no job waits behind newer arrivals forever; how strongly it counts is a scheduler setting.
 - `budget drawn` is how fast a running job consumes its budget: `budget drawn = GPU-hours × time-of-use weight × lane factor`.
-- `expected consumption` is `remaining budget ÷ remaining time`, later replaced by a model trained on past use.
+- `expected consumption` forecasts end-of-period use from the project's recent rate, capped at its remaining budget so it never exceeds the budget; a project on track to reach its cap before the period ends is flagged with the date it would. In the proof of concept the rate is a smoothed recent average; later it is replaced by a model trained on past use.
 
 ### Data model
 The entities the app stores, beyond what it reads live from the scheduler:
@@ -289,6 +289,17 @@ The reconstructable history relied on in the risk assessment depends on the app 
 
 ### Source of truth and identity
 For the proof of concept Notion holds people, projects, teams and their composition. The app keys everything to its own stable identifiers mapped to Notion records, so a rename or a move updates a link rather than breaking it. Identity is taken from Notion where possible, otherwise from a name, email and password matched to the Notion records. Whether projects are defined in the app or in Notion, and whether Notion is read through its API or directly from its database, are still to be decided.
+
+### Importing associations
+The app is built around three relationships, all imported from Notion.
+
+A person's projects. Project involvement is a workspace membership in Notion, so it imports directly as a many-to-many link. The same link is what SLURM uses as its account associations, deciding which project budgets a person may charge, so one relation serves both the app and the scheduler. A person's default project sets the account a job charges when none is named.
+
+A person's teams. Membership is many-to-many, since a multi-domain expert can support several teams. How it imports depends on the Notion model. If teams are workspaces in their own right, team membership is a direct relation. If only projects are workspaces, team membership is derived from the teams that own a person's projects, which is sound where the two are meant to mean the same thing. Where a home or reporting team must be distinguished from project involvement, it is kept as a separate single field.
+
+A project's team and funding. A project has at most one owning team and draws on one pool, team, organisation or personal, both single-valued and carried as attributes of the project rather than as levels of their own.
+
+Where Notion cannot express a many-to-many relation directly, the app holds the extra links itself, keyed to its own identifiers on top of the Notion records.
 
 ### Building and publishing
 The backend fits Django, with Django REST Framework for the API and PostgreSQL for storage; SQLite is enough for the proof of concept. The scheduler adapter is a small module wrapping sacctmgr, scontrol and sacct behind the app's own interface, and for the proof of concept it is a simulator that needs no cluster. A scheduled task refreshes effective standing from recent use and reconciles the Notion import. Django's own users carry authentication, mapped to Notion, with the roles above as permissions.
