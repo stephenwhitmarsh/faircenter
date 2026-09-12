@@ -6,18 +6,21 @@ import InfoTip from '../components/InfoTip.jsx'
 import { kpiHistory, KPIS, paramEvents } from '../data/mockData.js'
 
 const fmt = (n) => (Math.abs(n) >= 1000 ? Math.round(n).toLocaleString('en-GB') : n)
-const SUM_KEYS = new Set(['consumed', 'committed', 'changes'])
-const QUARTER = { Jan: 'Q1', Feb: 'Q1', Mar: 'Q1', Apr: 'Q2', May: 'Q2', Jun: 'Q2', Jul: 'Q3', Aug: 'Q3', Sep: 'Q3', Oct: 'Q4', Nov: 'Q4', Dec: 'Q4' }
+const SUM_KEYS = new Set(['consumed'])
+const MONTHQ = { Jan: 1, Feb: 1, Mar: 1, Apr: 2, May: 2, Jun: 2, Jul: 3, Aug: 3, Sep: 3, Sept: 3, Oct: 4, Nov: 4, Dec: 4 }
+// map a "Mon YY" period label to its quarter label, e.g. "Sept 26" -> "Q3 26"
+function quarterOf(label) { const [mon, yr] = label.split(' '); return `Q${MONTHQ[mon]} ${yr}` }
 
 function aggregate(periods, gran) {
   if (gran === 'month') return periods
-  const groups = {}
-  for (const p of periods) { const q = QUARTER[p.period]; (groups[q] ||= []).push(p) }
-  return Object.entries(groups).map(([q, arr]) => {
+  const order = [], groups = {}
+  for (const p of periods) { const q = quarterOf(p.period); if (!groups[q]) { groups[q] = []; order.push(q) } groups[q].push(p) }
+  return order.map((q) => {
+    const arr = groups[q]
     const out = { period: q, forecast: arr[arr.length - 1].forecast }
     for (const m of KPIS) {
       const vals = arr.map((a) => a[m.key])
-      out[m.key] = SUM_KEYS.has(m.key) ? vals.reduce((s, v) => s + v, 0) : +(vals.reduce((s, v) => s + v, 0) / vals.length).toFixed(2)
+      out[m.key] = SUM_KEYS.has(m.key) ? vals.reduce((s, v) => s + v, 0) : Math.round(vals.reduce((s, v) => s + v, 0) / vals.length)
     }
     return out
   })
@@ -44,7 +47,7 @@ export default function Analytics() {
 
   const events = gran === 'month'
     ? paramEvents.filter((e) => periods.some((p) => p.period === e.period))
-    : paramEvents.map((e) => ({ ...e, period: QUARTER[e.period] })).filter((e) => periods.some((p) => p.period === e.period))
+    : paramEvents.map((e) => ({ ...e, period: quarterOf(e.period) })).filter((e) => periods.some((p) => p.period === e.period))
 
   const unit = (v) => (v == null ? '—' : fmt(v) + (kpi.unit ? (kpi.unit === '%' ? '%' : ' ' + kpi.unit) : ''))
   const delta = latest && prev ? latest[kpiKey] - prev[kpiKey] : null

@@ -1,13 +1,13 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  ReferenceLine, ReferenceArea,
+  ReferenceLine, ReferenceArea, Brush,
 } from 'recharts'
 import DataTable from '../components/DataTable.jsx'
 import InfoTip from '../components/InfoTip.jsx'
 import {
   cluster, projects, teams, people, reservations, parameters, period, teamHue,
-  projectOwner, teamById, priorityTier, recentDailyRate, projectState,
+  projectOwner, teamById, priorityTier, recentDailyRate, projRate, projectState,
   loadSeries, forecastSeries, consumedGpuH, runningAt, activeProjects,
   fmtDay, fmtDateTime,
 } from '../data/mockData.js'
@@ -134,12 +134,14 @@ export default function ConsumptionReservations() {
   const [scope, setScope] = useState('all')
   const [range, setRange] = useState('30d')
   const [forecastOn, setForecastOn] = useState(true)
+  const [fcMethod, setFcMethod] = useState('recent')
   const [yUnit, setYUnit] = useState('gpus')
   const [custom, setCustom] = useState({ from: '2026-08-01', to: '2026-10-15' })
   const { can } = useSession()
   const [headroomPct, setHeadroomPct] = useState(Math.round(parameters.headroom.org * 100))
   const [oversub, setOversub] = useState(parameters.oversubscriptionFactor)
   const [admApplied, setAdmApplied] = useState(false)
+  const [sel, setSel] = useState(null) // {a,b} time window dragged on the chart
 
   const subset = projListForScope(scope)
   const keyOf = scope === 'all' ? keyOfAll : (p) => p.name
@@ -148,12 +150,12 @@ export default function ConsumptionReservations() {
 
   const chart = useMemo(() => {
     const act = loadSeries(subset, t0, tActualEnd, keyOf)
-    const fc = forecastOn && fEnd > period.nowMs ? forecastSeries(subset, period.nowMs, fEnd, keyOf) : { rows: [], buckets: [] }
+    const fc = forecastOn && fEnd > period.nowMs ? forecastSeries(subset, period.nowMs, fEnd, keyOf, fcMethod) : { rows: [], buckets: [] }
     const present = new Set()
     for (const r of [...act.rows, ...fc.rows]) for (const k of Object.keys(r)) if (k !== 't' && k !== 'forecast' && r[k] > 0) present.add(k)
     const units = orderedBuckets(scope, subset, present)
     return { rows: [...act.rows, ...fc.rows], units, mode: act.mode }
-  }, [scope, range, custom, forecastOn]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [scope, range, custom, forecastOn, fcMethod]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const colourByKey = Object.fromEntries(chart.units.map((u) => [u.key, u.colour]))
   const capGpus = cluster.gpus
@@ -176,8 +178,15 @@ export default function ConsumptionReservations() {
   const admDirty = headroomPct !== Math.round(parameters.headroom.org * 100) || oversub !== parameters.oversubscriptionFactor
   const applyAdmission = () => { parameters.headroom.org = headroomPct / 100; parameters.oversubscriptionFactor = oversub; setAdmApplied(true) }
 
-  // projects visible in the window, for the table
-  const tableRows = projects.filter((p) => p.endMs > t0 && p.startMs < fEnd)
+  // a dragged selection drives the tables; with none, default to the current moment
+  useEffect(() => { setSel(null) }, [range, scope, custom.from, custom.to, forecastOn])
+  const selLabel = sel ? `${fmtDay(sel.a)} – ${fmtDay(sel.b)}` : `now (${fmtDay(period.nowMs)})`
+  const projRows = sel
+    ? projects.filter((p) => p.endMs >= sel.a && p.startMs <= sel.b)
+    : projects.filter((p) => p.startMs <= period.nowMs && p.endMs >= period.nowMs)
+  const resvRows = sel
+    ? reservations.filter((r) => r.endMs >= sel.a && r.startMs <= sel.b)
+    : reservations.filter((r) => r.endMs >= period.nowMs && r.startMs <= fEnd)
 
   // regular, aligned x-axis ticks so dense actual data does not crush the labels
   const span = fEnd - t0
@@ -222,6 +231,12 @@ export default function ConsumptionReservations() {
           <button className={forecastOn ? 'active' : ''} onClick={() => setForecastOn(true)}>On</button>
           <button className={!forecastOn ? 'active' : ''} onClick={() => setForecastOn(false)}>Off</button>
         </div>
+        <select value={fcMethod} onChange={(e) => setFcMethod(e.target.value)} disabled={!forecastOn} title="Forecast model">
+          <option value="recent">Recent rate</option>
+          <option value="linear">Linear from start</option>
+          <option value="spline" disabled>Spline / trend (planned)</option>
+          <option value="ml" disabled>Learned model (planned)</option>
+        </select>
         <label style={{ marginLeft: 8 }}>Y-axis</label>
         <div className="seg">
           <button className={yUnit === 'gpus' ? 'active' : ''} onClick={() => setYUnit('gpus')}>GPUs</button>
@@ -254,7 +269,7 @@ export default function ConsumptionReservations() {
           Load over time — {drilled ? 'by project' : 'by team'}
           <span className="th-unit" style={{ marginLeft: 8 }}>{chart.mode === 'raw' ? 'job-level steps' : 'daily mean concurrency'}</span>
         </div>
-        <div style={{ width: '100%', height: 340 }}>
+        <div style={{ width: '100%', height: 370 }}>
           <ResponsiveContainer>
             <AreaChart data={chart.rows} margin={{ top: 20, right: 14, left: 8, bottom: 4 }}>
               <CartesianGrid stroke="var(--grid)" vertical={false} />
@@ -280,6 +295,12 @@ export default function ConsumptionReservations() {
               {fEnd > period.nowMs && t0 < period.nowMs && (
                 <ReferenceLine x={period.nowMs} stroke="var(--ink)" strokeWidth={2} label={{ value: 'now', fill: 'var(--ink)', fontSize: 11, fontWeight: 600, position: 'top' }} />
               )}
+              <Brush dataKey="t" height={20} travellerWidth={8} stroke="var(--ink-2)" fill="var(--surface)" tickFormatter={fmtDay}
+                onChange={(r) => {
+                  if (!r || r.startIndex == null || r.endIndex == null) return
+                  if (r.endIndex <= r.startIndex || (r.startIndex <= 0 && r.endIndex >= chart.rows.length - 1)) { setSel(null); return }
+                  setSel({ a: chart.rows[r.startIndex].t, b: chart.rows[r.endIndex].t })
+                }} />
             </AreaChart>
           </ResponsiveContainer>
         </div>
@@ -296,10 +317,12 @@ export default function ConsumptionReservations() {
 
       <div className="card">
         <div className="card-title" style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
-          <span>Projects in view <span className="th-unit">{tableRows.length} overlapping this window</span></span>
+          <span>Projects — {selLabel} <span className="th-unit">{projRows.length} shown</span></span>
         </div>
         <p className="hint" style={{ marginTop: 0 }}>
-          Select a row to scope the chart to that project.
+          Drag over the chart to pick a time window; with none, this shows projects active
+          now. {sel && <button className="linkbtn" onClick={() => setSel(null)}>Clear selection</button>}
+          {' '}Select a row to scope the chart to that project.
           {drilled && <> <button className="linkbtn" onClick={() => setScope('all')}>Back to all teams</button></>}
         </p>
         <div className="tbl-scroll">
@@ -315,23 +338,23 @@ export default function ConsumptionReservations() {
               { key: 'used', label: 'Used', num: true, render: (p) => fmt(p.used) },
               { key: 'left', label: 'Left', num: true, sortValue: (p) => p.budget - p.used, render: (p) => fmt(Math.max(0, p.budget - p.used)) },
               { key: 'prog', label: 'Consumption', sortable: false, render: (p) => (<div className="meter" title={`${Math.round((p.used / p.budget) * 100)}%`}><span style={{ width: Math.min(100, (p.used / p.budget) * 100) + '%' }} /></div>) },
-              { key: 'fc', label: <>Forecast use <InfoTip text="Projected consumption to the project's end, capped at its budget." /></>, num: true, thClass: 'fc-col fc-first', tdClass: 'fc-col fc-first', sortValue: (p) => fEndUse(p), render: (p) => fmt(fEndUse(p)) },
-              { key: 'demand', label: <>Demand <InfoTip text="Same projection uncapped; can exceed the budget." /></>, num: true, thClass: 'fc-col', tdClass: 'fc-col', sortValue: (p) => demandEnd(p), render: (p) => fmt(demandEnd(p)) },
-              { key: 'over', label: 'Over budget', num: true, thClass: 'fc-col', tdClass: 'fc-col', sortValue: (p) => Math.max(0, demandEnd(p) - p.budget), render: (p) => { const o = Math.max(0, Math.round(demandEnd(p) - p.budget)); return o > 0 ? <span className="tag warn">+{fmt(o)} ({Math.round(o / p.budget * 100)}%)</span> : <span className="hint">—</span> } },
-              { key: 'runs', label: 'Budget runs out', thClass: 'fc-col', tdClass: 'fc-col', sortValue: (p) => runsOut(p) ?? Infinity, render: (p) => { const d = runsOut(p); return d ? <span className="tag warn">~{fmtDay(d)}</span> : <span className="hint">within budget</span> } },
+              { key: 'fc', label: <>Forecast use <InfoTip text="Projected consumption to the project's end, capped at its budget." /></>, num: true, thClass: 'fc-col fc-first', tdClass: 'fc-col fc-first', sortValue: (p) => fEndUse(p, fcMethod), render: (p) => fmt(fEndUse(p, fcMethod)) },
+              { key: 'demand', label: <>Demand <InfoTip text="Same projection uncapped; can exceed the budget." /></>, num: true, thClass: 'fc-col', tdClass: 'fc-col', sortValue: (p) => demandEnd(p, fcMethod), render: (p) => fmt(demandEnd(p, fcMethod)) },
+              { key: 'diff', label: <>Difference <InfoTip text="Projected demand minus budget at the project's end. Positive is over budget (red), negative is under (green)." /></>, num: true, thClass: 'fc-col', tdClass: 'fc-col', sortValue: (p) => demandEnd(p, fcMethod) - p.budget, render: (p) => { const d = Math.round(demandEnd(p, fcMethod) - p.budget); const pc = Math.round((d / p.budget) * 100); if (d > 0) return <span className="tag warn">+{fmt(d)} (+{pc}%)</span>; if (d < 0) return <span className="tag ok">{fmt(d)} ({pc}%)</span>; return <span className="hint">0</span> } },
+              { key: 'runs', label: 'Budget runs out', thClass: 'fc-col', tdClass: 'fc-col', sortValue: (p) => runsOut(p, fcMethod) ?? Infinity, render: (p) => { const d = runsOut(p, fcMethod); return d ? <span className="tag warn">~{fmtDay(d)}</span> : <span className="hint">within budget</span> } },
             ]}
-            rows={tableRows}
+            rows={projRows}
           />
         </div>
         <p className="hint">
           The shaded columns are forecast to each project’s end from its recent job rate.
-          <b> Forecast use</b> is capped at the budget; <b>Demand</b> is uncapped, so <b>Over
-          budget</b> shows how far a project threatens to exceed it.
+          <b> Forecast use</b> is capped at the budget; <b>Demand</b> is uncapped, so
+          <b> Difference</b> is projected demand minus budget: over budget in red, under in green.
         </p>
       </div>
 
       <div className="card">
-        <div className="card-title">Reservations near now</div>
+        <div className="card-title">Reservations — {selLabel} <span className="th-unit">{resvRows.length} shown</span></div>
         <DataTable
           initialSort={{ key: 'start', dir: 'asc' }}
           columns={[
@@ -340,7 +363,7 @@ export default function ConsumptionReservations() {
             { key: 'label', label: 'What' },
             { key: 'gpus', label: 'GPUs', num: true },
           ]}
-          rows={reservations}
+          rows={resvRows}
         />
       </div>
     </section>
@@ -349,10 +372,10 @@ export default function ConsumptionReservations() {
 
 // forecast helpers for the table (per project, to its own end)
 function daysToEnd(p) { return Math.max(0, (Math.min(p.endMs, period.endMs) - period.nowMs) / DAY) }
-function demandEnd(p) { return Math.round(p.used + recentDailyRate(p) * daysToEnd(p)) }
-function fEndUse(p) { return Math.round(Math.min(p.budget, p.used + recentDailyRate(p) * daysToEnd(p))) }
-function runsOut(p) {
-  const rate = recentDailyRate(p)
+function demandEnd(p, m) { return Math.round(p.used + projRate(p, m) * daysToEnd(p)) }
+function fEndUse(p, m) { return Math.round(Math.min(p.budget, p.used + projRate(p, m) * daysToEnd(p))) }
+function runsOut(p, m) {
+  const rate = projRate(p, m)
   if (rate <= 0 || p.used >= p.budget) return null
   const d = period.nowMs + ((p.budget - p.used) / rate) * DAY
   return d <= Math.min(p.endMs, period.endMs) ? d : null
