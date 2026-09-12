@@ -6,563 +6,336 @@ import {
 import DataTable from '../components/DataTable.jsx'
 import InfoTip from '../components/InfoTip.jsx'
 import {
-  cluster, projects, teams, people, reservations, parameters, period,
-  projectOwner, ownerBucket, teamById, dailyIncrements, hourlyActualToday, forecastBuckets,
-  exhaustionDay, dayLabel, hourLabel, endDay, recentDailyRate,
+  cluster, projects, teams, people, reservations, parameters, period, teamHue,
+  projectOwner, teamById, priorityTier, recentDailyRate, projectState,
+  loadSeries, forecastSeries, consumedGpuH, runningAt, activeProjects,
+  fmtDay, fmtDateTime,
 } from '../data/mockData.js'
 import { useSession } from '../session.jsx'
 
-// GPU-hours a project holds by reservation on a given day-of-month (reserved
-// GPUs run around the clock for the window). Reservations are guaranteed load,
-// so they form a floor under the forecast.
-function reservedGpuHours(projectId, day) {
-  let g = 0
-  for (const r of reservations) {
-    if (r.projectId !== projectId) continue
-    const s = Number(r.start.slice(-2)), e = Number((r.end || r.start).slice(-2))
-    if (day >= s && day <= e) g += r.gpus
-  }
-  return g * 24
-}
-
-// Projected end-of-period demand if the project were NOT capped at its budget:
-// the recent (or average) rate continued to the project's end date. This is
-// planned demand, distinct from consumption, and can exceed the budget.
-function uncappedEnd(p, method = 'recent') {
-  const active = Math.max(0, endDay(p) - period.today)
-  const rate = method === 'linear' ? (period.today > 0 ? p.used / period.today : 0) : recentDailyRate(p)
-  return p.used + rate * active
-}
-
-// Cluster-level demand forecast from every project's uncapped projection: the
-// first future day projected concurrent demand exceeds daily capacity, the peak
-// as a share of it, and total projected demand for the period.
-function capacityForecast(method = 'recent') {
-  const capDaily = cluster.capacityGpuHours / period.totalDays
-  let reached = null, peak = 0
-  for (let d = period.today + 1; d <= period.totalDays; d++) {
-    let load = 0
-    for (const p of projects) {
-      if (d > endDay(p)) continue
-      const rate = method === 'linear' ? (period.today > 0 ? p.used / period.today : 0) : recentDailyRate(p)
-      load += Math.max(rate, reservedGpuHours(p.id, d))
-    }
-    peak = Math.max(peak, load)
-    if (reached === null && load > capDaily) reached = d
-  }
-  const totalDemand = projects.reduce((s, p) => s + uncappedEnd(p, method), 0)
-  return { reached, peakPct: Math.round((peak / capDaily) * 100), totalDemand }
-}
-
+const DAY = 24 * 3600 * 1000
 const fmt = (n) => Math.round(n).toLocaleString('en-GB')
+const floorDay = (ms) => Math.floor(ms / DAY) * DAY
 
-const FAMILIES = {
-  Pretraining: ['#2a78d6', '#6da7ec'],
-  'Fine-tuning': ['#eb6834', '#f2a07f'],
-  Evaluation: ['#1baf7a', '#7fd3b6'],
-  Personal: ['#4a3aa7', '#9085e9'],
-  Organisation: ['#e87ba4', '#f0b3c9'],
-}
-const COLOURS = (() => {
-  const seen = {}, map = {}
-  for (const p of projects) {
-    const b = ownerBucket(p)
-    const fam = FAMILIES[b] ?? ['#898781']
-    const i = seen[b] ?? 0
-    map[p.id] = fam[i % fam.length]
-    seen[b] = i + 1
-  }
-  return map
-})()
-
-const TEAM_HUES = ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#008300', '#e34948', '#4a3aa7', '#e87ba4']
-const TEAM_COLOUR = Object.fromEntries(teams.map((t, i) => [t.name, TEAM_HUES[i % TEAM_HUES.length]]))
+// team colours by name, plus the special buckets
+const NAME_HUE = Object.fromEntries(teams.map((t) => [t.name, teamHue[t.id]]))
 function bucketColour(name) {
+  if (NAME_HUE[name]) return NAME_HUE[name]
   if (name === 'Personal') return '#9085e9'
-  if (name === 'No team') return '#898781'
-  return TEAM_COLOUR[name] ?? '#898781'
+  if (name === 'No team') return '#7a8899'
+  if (name === 'Other') return '#8a8f98'
+  return '#888'
 }
-function projectBucketName(p) {
-  if (p.teamId) return teamById(p.teamId)?.name ?? 'No team'
+const DRILL_HUES = ['#2a78d6', '#eb6834', '#1baf7a', '#8b5cf6', '#e8368f', '#0ea5b7', '#eda100', '#6366f1', '#14b8a6', '#f43f5e']
+
+// the eight teams busiest recently get their own band; the rest fold into "Other"
+const RECENT_FROM = period.nowMs - 45 * DAY
+const TEAM_RANK = teams.map((t) => ({ name: t.name, load: consumedGpuH(projects.filter((p) => p.teamId === t.id), RECENT_FROM, period.nowMs) }))
+  .sort((a, b) => b.load - a.load)
+const TOP_TEAMS = new Set(TEAM_RANK.filter((x) => x.load > 0).slice(0, 8).map((x) => x.name))
+
+function keyOfAll(p) {
   if (p.funding === 'person') return 'Personal'
-  return 'No team'
+  if (!p.teamId) return 'No team'
+  const n = teamById(p.teamId)?.name
+  return TOP_TEAMS.has(n) ? n : 'Other'
 }
 
-function selectedProjects(scope) {
+function projListForScope(scope) {
   if (scope === 'all') return projects
   const [k, id] = scope.split(':')
   if (k === 'team') return projects.filter((p) => p.teamId === id)
-  if (k === 'person') return projects.filter((p) => p.personId === id)
+  if (k === 'person') { const per = people.find((pp) => pp.id === id); return projects.filter((p) => (per?.projectIds ?? []).includes(p.id) || p.personId === id) }
   if (k === 'project') return projects.filter((p) => p.id === id)
   return projects
 }
 
-function unitsForScope(scope, subset) {
+function windowFor(range, custom) {
+  const now = period.nowMs
+  if (range === 'today') return { t0: floorDay(now), fEnd: floorDay(now) + DAY }
+  if (range === '7d') return { t0: now - 7 * DAY, fEnd: now + 7 * DAY }
+  if (range === '30d') return { t0: now - 30 * DAY, fEnd: now + 30 * DAY }
+  if (range === '90d') return { t0: now - 90 * DAY, fEnd: now + 45 * DAY }
+  if (range === 'total') return { t0: period.startMs, fEnd: period.endMs }
+  const t0 = Date.parse(custom.from), fEnd = Date.parse(custom.to)
+  return { t0: isNaN(t0) ? period.startMs : t0, fEnd: isNaN(fEnd) ? now : fEnd }
+}
+
+// ordered bucket list and their colours for the current scope + rows
+function orderedBuckets(scope, subset, presentSet) {
   if (scope === 'all') {
-    const order = [...teams.map((t) => t.name), 'Personal', 'No team']
-    const byB = {}
-    for (const p of projects) { const b = projectBucketName(p); (byB[b] ||= []).push(p) }
-    return order.filter((b) => byB[b]).map((b) => ({ key: 'b:' + b, label: b, projects: byB[b], colour: bucketColour(b) }))
+    const order = [...TEAM_RANK.map((x) => x.name).filter((n) => TOP_TEAMS.has(n)), 'Other', 'Personal', 'No team']
+    return order.filter((b) => presentSet.has(b)).map((b) => ({ key: b, colour: bucketColour(b) }))
   }
-  return subset.map((p) => ({ key: p.id, label: p.name, projects: [p], colour: COLOURS[p.id] }))
-}
-
-function horizonDays(forecast) {
-  if (forecast === '7') return 7
-  if (forecast === '14') return 14
-  return 30
-}
-
-function buildSeries(range, units, custom, forecast, method) {
-  const allP = units.flatMap((u) => u.projects)
-  const fcOn = forecast !== 'off'
-
-  if (range === 'today') {
-    const lastHour = fcOn ? 23 : period.nowHour
-    const fcCount = 23 - period.nowHour
-    const act = {}, fc = {}
-    for (const p of allP) {
-      const a = hourlyActualToday(p).map((x) => x.value)
-      act[p.id] = a
-      fc[p.id] = forecastBuckets(p, a, fcCount)
-    }
-    const valAt = (p, h) => (h <= period.nowHour ? act[p.id][h] : fc[p.id][h - period.nowHour - 1])
-    const usedBefore = {}
-    for (const p of allP) usedBefore[p.id] = p.used - act[p.id].reduce((s, v) => s + v, 0)
-    const cumAt = (p, h) => {
-      if (h <= period.nowHour) { let s = usedBefore[p.id]; for (let i = 0; i <= h; i++) s += act[p.id][i]; return s }
-      let s = p.used; for (let i = 0; i <= h - period.nowHour - 1; i++) s += fc[p.id][i]; return s
-    }
-    const rows = []
-    for (let h = 0; h <= lastHour; h++) {
-      const row = { label: hourLabel(h), forecast: h > period.nowHour }
-      for (const u of units) {
-        row[u.key] = u.projects.reduce((s, p) => s + (valAt(p, h) || 0), 0)
-        row[u.key + ':cum'] = u.projects.reduce((s, p) => s + cumAt(p, h), 0)
-      }
-      rows.push(row)
-    }
-    return { rows, nowLabel: hourLabel(period.nowHour), lastLabel: hourLabel(lastHour), showForecast: fcOn, fcLabel: 'forecast' }
-  }
-
-  let ds, de
-  if (range === 'custom') {
-    const toDay = (s) => (s ? Math.min(period.today, Math.max(1, Number(s.slice(-2)))) : null)
-    ds = toDay(custom.from) ?? 1
-    de = toDay(custom.to) ?? period.today
-    if (ds > de) [ds, de] = [de, ds]
-  } else if (range === 'total') {
-    ds = Math.max(1, Math.min(...allP.map((p) => (p.start ? Number(p.start.slice(-2)) : 1))))
-    de = period.today
-  } else {
-    de = period.today
-    ds = period.today - 6
-    ds = Math.max(1, ds)
-  }
-  let hd = horizonDays(forecast)
-  if (range === 'total') {
-    const maxEnd = Math.max(period.today, ...allP.map((p) => endDay(p)))
-    hd = Math.max(0, Math.min(period.totalDays, maxEnd) - period.today)
-  }
-  const fcEnd = period.today + hd
-  const showForecast = fcOn && de >= period.today
-
-  const dailyActual = {}, fc = {}
-  for (const p of allP) {
-    dailyActual[p.id] = dailyIncrements(p)
-    const active = Math.max(0, endDay(p) - period.today)
-    const rate = method === 'linear' ? (period.today > 0 ? p.used / period.today : 0) : recentDailyRate(p)
-    let remaining = Math.max(0, p.budget - p.used)
-    const arr = []
-    for (let i = 0; i < hd; i++) {
-      // full rate until the budget is spent, then a sharp stop; a reservation
-      // is guaranteed load, so it floors the day regardless
-      let v = i < active ? Math.min(rate, remaining) : 0
-      remaining -= v
-      arr.push(Math.max(v, reservedGpuHours(p.id, period.today + i + 1)))
-    }
-    fc[p.id] = arr
-  }
-  // cumulative consumed by end of day d: sum of actual increments through d,
-  // then p.used plus forecast increments past today
-  const cumAtDay = (p, d) => {
-    if (d <= period.today) { let s = 0; for (let i = 0; i < d; i++) s += dailyActual[p.id][i] || 0; return s }
-    let s = p.used; for (let i = 0; i < d - period.today; i++) s += fc[p.id][i] || 0; return s
-  }
-  const rows = []
-  for (let d = ds; d <= de; d++) {
-    const row = { label: dayLabel(d), forecast: false }
-    for (const u of units) {
-      row[u.key] = u.projects.reduce((s, p) => s + (dailyActual[p.id][d - 1] || 0), 0)
-      row[u.key + ':cum'] = u.projects.reduce((s, p) => s + cumAtDay(p, d), 0)
-    }
-    rows.push(row)
-  }
-  if (showForecast) {
-    for (let d = period.today + 1; d <= fcEnd; d++) {
-      const row = { label: dayLabel(d), forecast: true }
-      for (const u of units) {
-        row[u.key] = u.projects.reduce((s, p) => s + (fc[p.id][d - period.today - 1] || 0), 0)
-        row[u.key + ':cum'] = u.projects.reduce((s, p) => s + cumAtDay(p, d), 0)
-      }
-      rows.push(row)
-    }
-  }
-  return {
-    rows,
-    nowLabel: de >= period.today ? dayLabel(period.today) : null,
-    lastLabel: dayLabel(showForecast ? fcEnd : de),
-    showForecast,
-    fcLabel: `forecast · ${hd}d`,
-  }
-}
-
-function ChartTooltip({ active, payload, label, colourByLabel, budgetByLabel, yUnit, cap }) {
-  if (!active || !payload || !payload.length) return null
-  const items = payload.filter((p) => p.value > 0).sort((a, b) => b.value - a.value)
-  const total = payload.reduce((s, p) => s + (p.value || 0), 0)
-  const show = (v) => (yUnit === 'pct' ? Math.round((v / cap) * 100) + '%' : fmt(v) + ' GPU-h')
-  const budgetPct = (p) => {
-    const b = budgetByLabel?.[p.name]
-    const cum = p.payload?.[p.dataKey + ':cum']
-    if (!b || cum == null) return null
-    return Math.round((cum / b) * 100)
-  }
-  return (
-    <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12, padding: '8px 10px', minWidth: 200 }}>
-      <div style={{ color: 'var(--ink-2)', marginBottom: 5 }}>{label}</div>
-      {items.map((p) => {
-        const bp = budgetPct(p)
-        return (
-          <div key={p.name} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, margin: '2px 0' }}>
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-              <i style={{ width: 9, height: 9, borderRadius: 2, background: colourByLabel[p.name] || p.color, display: 'inline-block' }} />
-              {p.name}
-            </span>
-            <span style={{ display: 'inline-flex', alignItems: 'baseline', gap: 8, fontVariantNumeric: 'tabular-nums' }}>
-              <span>{show(p.value)}</span>
-              {bp != null && <span style={{ color: 'var(--muted)', fontSize: 11 }}>{bp}% of budget</span>}
-            </span>
-          </div>
-        )
-      })}
-      <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid var(--border)', marginTop: 5, paddingTop: 5, fontWeight: 600 }}>
-        <span>Total</span><span style={{ fontVariantNumeric: 'tabular-nums' }}>{show(total)}</span>
-      </div>
-      <div style={{ color: 'var(--muted)', fontSize: 10, marginTop: 5 }}>
-        band = load at this time · % of budget = spent by this point
-      </div>
-    </div>
-  )
-}
-
-// Flat, searchable list of everything the graph can be scoped to.
-function scopeOptions() {
-  const opts = [{ value: 'all', label: 'All teams', group: '' }]
-  for (const t of teams) opts.push({ value: 'team:' + t.id, label: t.name, group: 'Team' })
-  for (const p of people.filter((pp) => projects.some((pr) => pr.personId === pp.id))) opts.push({ value: 'person:' + p.id, label: p.name, group: 'Person' })
-  for (const p of projects) opts.push({ value: 'project:' + p.id, label: p.name, group: 'Project' })
-  return opts
+  return subset.filter((p) => presentSet.has(p.name)).map((p, i) => ({ key: p.name, colour: DRILL_HUES[i % DRILL_HUES.length] }))
 }
 
 function ScopePicker({ value, onChange }) {
   const [open, setOpen] = useState(false)
   const [q, setQ] = useState('')
-  const opts = useMemo(scopeOptions, [])
+  const opts = useMemo(() => {
+    const o = [{ value: 'all', label: 'All teams', group: '' }]
+    for (const t of teams) o.push({ value: 'team:' + t.id, label: t.name, group: 'Team' })
+    for (const p of people.filter((pp) => pp.projectIds.length)) o.push({ value: 'person:' + p.id, label: p.name, group: 'Person' })
+    for (const p of projects) o.push({ value: 'project:' + p.id, label: p.name, group: 'Project' })
+    return o
+  }, [])
   const current = opts.find((o) => o.value === value)?.label ?? 'All teams'
   const ql = q.trim().toLowerCase()
-  const shown = ql ? opts.filter((o) => o.label.toLowerCase().includes(ql) || o.group.toLowerCase().includes(ql)) : opts
+  const shown = (ql ? opts.filter((o) => o.label.toLowerCase().includes(ql) || o.group.toLowerCase().includes(ql)) : opts).slice(0, 60)
   const pick = (v) => { onChange(v); setOpen(false); setQ('') }
   return (
     <span className="scopepick">
-      <button type="button" className="scopepick-btn" onClick={() => setOpen((o) => !o)}>
-        {current} <span className="scopepick-caret">▾</span>
-      </button>
-      {open && (
-        <>
-          <div className="scopepick-backdrop" onClick={() => setOpen(false)} />
-          <div className="scopepick-menu">
-            <input autoFocus type="search" placeholder="Search team, person or project" value={q} onChange={(e) => setQ(e.target.value)} />
-            <div className="scopepick-list">
-              {shown.length === 0 && <div className="scopepick-empty">No match</div>}
-              {shown.map((o, i) => {
-                const head = o.group && (i === 0 || shown[i - 1].group !== o.group)
-                return (
-                  <div key={o.value}>
-                    {head && <div className="scopepick-group">{o.group}</div>}
-                    <button type="button" className={'scopepick-opt' + (o.value === value ? ' sel' : '')} onClick={() => pick(o.value)}>{o.label}</button>
-                  </div>
-                )
-              })}
-            </div>
+      <button type="button" className="scopepick-btn" onClick={() => setOpen((o) => !o)}>{current} <span className="scopepick-caret">▾</span></button>
+      {open && (<>
+        <div className="scopepick-backdrop" onClick={() => setOpen(false)} />
+        <div className="scopepick-menu">
+          <input autoFocus type="search" placeholder="Search team, person or project" value={q} onChange={(e) => setQ(e.target.value)} />
+          <div className="scopepick-list">
+            {shown.length === 0 && <div className="scopepick-empty">No match</div>}
+            {shown.map((o, i) => {
+              const head = o.group && (i === 0 || shown[i - 1].group !== o.group)
+              return (<div key={o.value}>
+                {head && <div className="scopepick-group">{o.group}</div>}
+                <button type="button" className={'scopepick-opt' + (o.value === value ? ' sel' : '')} onClick={() => pick(o.value)}>{o.label}</button>
+              </div>)
+            })}
           </div>
-        </>
-      )}
+        </div>
+      </>)}
     </span>
+  )
+}
+
+function ChartTooltip({ active, payload, label, colourByKey, yUnit, capGpus }) {
+  if (!active || !payload || !payload.length) return null
+  const items = payload.filter((p) => p.value > 0).sort((a, b) => b.value - a.value)
+  const total = payload.reduce((s, p) => s + (p.value || 0), 0)
+  const show = (v) => (yUnit === 'pct' ? Math.round((v / capGpus) * 100) + '%' : Math.round(v) + ' GPU')
+  return (
+    <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12, padding: '8px 10px', minWidth: 190 }}>
+      <div style={{ color: 'var(--ink-2)', marginBottom: 5 }}>{fmtDateTime(label)}</div>
+      {items.slice(0, 12).map((p) => (
+        <div key={p.name} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, margin: '2px 0' }}>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            <i style={{ width: 9, height: 9, borderRadius: 2, background: colourByKey[p.name] || p.color, display: 'inline-block' }} />{p.name}
+          </span>
+          <span style={{ fontVariantNumeric: 'tabular-nums' }}>{show(p.value)}</span>
+        </div>
+      ))}
+      <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid var(--border)', marginTop: 5, paddingTop: 5, fontWeight: 600 }}>
+        <span>Total load</span><span style={{ fontVariantNumeric: 'tabular-nums' }}>{show(total)}</span>
+      </div>
+    </div>
   )
 }
 
 export default function ConsumptionReservations() {
   const [scope, setScope] = useState('all')
-  const [range, setRange] = useState('total')
-  const [forecast, setForecast] = useState('14')
-  const [yUnit, setYUnit] = useState('gpuh')
-  const [fcMethod, setFcMethod] = useState('recent')
-  const [custom, setCustom] = useState({ from: '2026-09-01', to: '2026-09-12' })
+  const [range, setRange] = useState('30d')
+  const [forecastOn, setForecastOn] = useState(true)
+  const [yUnit, setYUnit] = useState('gpus')
+  const [custom, setCustom] = useState({ from: '2026-08-01', to: '2026-10-15' })
   const { can } = useSession()
   const [headroomPct, setHeadroomPct] = useState(Math.round(parameters.headroom.org * 100))
   const [oversub, setOversub] = useState(parameters.oversubscriptionFactor)
   const [admApplied, setAdmApplied] = useState(false)
 
-  const subset = selectedProjects(scope)
-  const units = useMemo(() => unitsForScope(scope, subset), [scope]) // eslint-disable-line react-hooks/exhaustive-deps
-  const { rows, nowLabel, lastLabel, showForecast, fcLabel } = useMemo(
-    () => buildSeries(range, units, custom, forecast, fcMethod),
-    [range, scope, custom, forecast, fcMethod], // eslint-disable-line react-hooks/exhaustive-deps
-  )
-  const colourByLabel = Object.fromEntries(units.map((u) => [u.label, u.colour]))
-  const budgetByLabel = Object.fromEntries(units.map((u) => [u.label, u.projects.reduce((s, p) => s + p.budget, 0)]))
-  // reservations that belong to a project in the current scope, coloured by
-  // their band and sized by the GPU-hours they hold
-  const capDaily = cluster.capacityGpuHours / period.totalDays
-  const resvViz = reservations.map((r) => {
-    const u = units.find((uu) => uu.projects.some((p) => p.id === r.projectId))
-    if (!u) return null
-    const sd = Number(r.start.slice(-2)), ed = Number((r.end || r.start).slice(-2))
-    return { ...r, colour: u.colour, team: u.label, proj: projName(r.projectId), gpuH: r.gpus * 24, sd, ed }
-  }).filter(Boolean)
-  // nominal capacity per time bucket, used for the % view and the capacity line
-  const cap = range === 'today'
-    ? cluster.capacityGpuHours / (period.totalDays * 24)
-    : cluster.capacityGpuHours / period.totalDays
+  const subset = projListForScope(scope)
+  const keyOf = scope === 'all' ? keyOfAll : (p) => p.name
+  const { t0, fEnd } = windowFor(range, custom)
+  const tActualEnd = Math.min(fEnd, period.nowMs)
 
-  const committed = projects.reduce((s, p) => s + p.budget, 0)
-  const headroom = Math.round(cluster.capacityGpuHours * (headroomPct / 100))
-  const stillFree = cluster.capacityGpuHours - committed - headroom
-  const consumedToDate = projects.reduce((s, p) => s + p.used, 0)
-  const demand = capacityForecast(fcMethod)
-  const admDirty = headroomPct !== Math.round(parameters.headroom.org * 100) || oversub !== parameters.oversubscriptionFactor
-  const applyAdmission = () => {
-    parameters.headroom.org = headroomPct / 100
-    parameters.oversubscriptionFactor = oversub
-    setAdmApplied(true)
-  }
+  const chart = useMemo(() => {
+    const act = loadSeries(subset, t0, tActualEnd, keyOf)
+    const fc = forecastOn && fEnd > period.nowMs ? forecastSeries(subset, period.nowMs, fEnd, keyOf) : { rows: [], buckets: [] }
+    const present = new Set()
+    for (const r of [...act.rows, ...fc.rows]) for (const k of Object.keys(r)) if (k !== 't' && k !== 'forecast' && r[k] > 0) present.add(k)
+    const units = orderedBuckets(scope, subset, present)
+    return { rows: [...act.rows, ...fc.rows], units, mode: act.mode }
+  }, [scope, range, custom, forecastOn]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  const colourByKey = Object.fromEntries(chart.units.map((u) => [u.key, u.colour]))
+  const capGpus = cluster.gpus
   const drilled = scope !== 'all'
+
+  // reservations visible in this scope + window
+  const resvViz = reservations.map((r) => {
+    const p = projects.find((pp) => pp.id === r.projectId)
+    if (!p || !subset.some((s) => s.id === p.id)) return null
+    if (r.endMs < t0 || r.startMs > fEnd) return null
+    const key = keyOf(p)
+    return { ...r, colour: colourByKey[key] || bucketColour(key), team: key, proj: p.name }
+  }).filter(Boolean)
+
+  // tiles
+  const runningNow = runningAt(projects.map((p) => p.id), period.nowMs)
+  const active = activeProjects().length
+  const consumed = consumedGpuH(subset, t0, tActualEnd)
+  const headroomGpus = Math.round(cluster.gpus * (headroomPct / 100))
+  const admDirty = headroomPct !== Math.round(parameters.headroom.org * 100) || oversub !== parameters.oversubscriptionFactor
+  const applyAdmission = () => { parameters.headroom.org = headroomPct / 100; parameters.oversubscriptionFactor = oversub; setAdmApplied(true) }
+
+  // projects visible in the window, for the table
+  const tableRows = projects.filter((p) => p.endMs > t0 && p.startMs < fEnd)
+
+  // regular, aligned x-axis ticks so dense actual data does not crush the labels
+  const span = fEnd - t0
+  const tickStep = span <= 2 * DAY ? 6 * 3600 * 1000 : span <= 18 * DAY ? DAY : span <= 130 * DAY ? 7 * DAY : 30 * DAY
+  const ticks = []
+  for (let tk = Math.ceil(t0 / tickStep) * tickStep; tk <= fEnd; tk += tickStep) ticks.push(tk)
+  const tickFmt = (v) => (tickStep < DAY
+    ? new Date(v).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
+    : fmtDay(v))
 
   return (
     <section>
       <div className="view-head">
         <h2 className="view-title">Planning</h2>
         <p className="view-intro">
-          GPU load over time, stacked by team so the whole shows the load on the cluster.
-          Scope to a team, project or person to break the band down. Past “now” the load
-          is forecast; reservations hold GPUs for set windows and show as blocks on the
-          load. This is where consumption, forecast and reservations are read together.
+          GPU load over time, built from individual jobs the way it comes from SLURM: the
+          band is the number of GPUs held by running jobs, so it steps up and down as jobs
+          start and finish. Scope to a team, project or person; past “now” the load is
+          forecast. Reservations hold GPUs for set windows and show as blocks.
         </p>
       </div>
 
       <div className="controls">
         <label>Scope</label>
         <ScopePicker value={scope} onChange={setScope} />
-
         <label style={{ marginLeft: 8 }}>Range</label>
         <div className="seg">
           <button className={range === 'today' ? 'active' : ''} onClick={() => setRange('today')}>Today</button>
-          <button className={range === 'last7' ? 'active' : ''} onClick={() => setRange('last7')}>Last 7 days</button>
+          <button className={range === '7d' ? 'active' : ''} onClick={() => setRange('7d')}>7d</button>
+          <button className={range === '30d' ? 'active' : ''} onClick={() => setRange('30d')}>30d</button>
+          <button className={range === '90d' ? 'active' : ''} onClick={() => setRange('90d')}>90d</button>
           <button className={range === 'total' ? 'active' : ''} onClick={() => setRange('total')}>Total</button>
           <button className={range === 'custom' ? 'active' : ''} onClick={() => setRange('custom')}>Custom</button>
         </div>
-        {range === 'custom' && (
-          <>
-            <input type="date" min="2026-09-01" max="2026-09-12" value={custom.from} onChange={(e) => setCustom((c) => ({ ...c, from: e.target.value }))} />
-            <span className="hint">to</span>
-            <input type="date" min="2026-09-01" max="2026-09-12" value={custom.to} onChange={(e) => setCustom((c) => ({ ...c, to: e.target.value }))} />
-          </>
-        )}
-
+        {range === 'custom' && (<>
+          <input type="date" value={custom.from} onChange={(e) => setCustom((c) => ({ ...c, from: e.target.value }))} />
+          <span className="hint">to</span>
+          <input type="date" value={custom.to} onChange={(e) => setCustom((c) => ({ ...c, to: e.target.value }))} />
+        </>)}
         <label style={{ marginLeft: 8 }}>Forecast</label>
         <div className="seg">
-          <button className={forecast === 'off' ? 'active' : ''} onClick={() => setForecast('off')}>Off</button>
-          <button className={forecast === '7' ? 'active' : ''} onClick={() => setForecast('7')}>7d</button>
-          <button className={forecast === '14' ? 'active' : ''} onClick={() => setForecast('14')}>14d</button>
-          <button className={forecast === '30' ? 'active' : ''} onClick={() => setForecast('30')}>30d</button>
+          <button className={forecastOn ? 'active' : ''} onClick={() => setForecastOn(true)}>On</button>
+          <button className={!forecastOn ? 'active' : ''} onClick={() => setForecastOn(false)}>Off</button>
         </div>
-
         <label style={{ marginLeft: 8 }}>Y-axis</label>
         <div className="seg">
-          <button className={yUnit === 'gpuh' ? 'active' : ''} onClick={() => setYUnit('gpuh')}>GPU-h</button>
+          <button className={yUnit === 'gpus' ? 'active' : ''} onClick={() => setYUnit('gpus')}>GPUs</button>
           <button className={yUnit === 'pct' ? 'active' : ''} onClick={() => setYUnit('pct')}>% capacity</button>
         </div>
       </div>
 
       <div className="tiles">
-        <Tile label="Cluster capacity" value={fmt(cluster.capacityGpuHours)} note="GPU-hours / period" />
-        <Tile label={<>Committed budgets <InfoTip text="Planned allocations. Budgets may sum above capacity within the over-subscription factor; this is planned, not consumed." /></>} value={fmt(committed)} note={pct(committed, cluster.capacityGpuHours)} />
-        <Tile label={<>Consumed to date <InfoTip text="Actual GPU-hours run so far. Consumption can never exceed capacity, and each project is capped at its budget." /></>} value={fmt(consumedToDate)} note={`${Math.round((consumedToDate / committed) * 100)}% of committed`} />
-        <Tile label={<>Projected demand <InfoTip text="Every project's recent rate continued to its end date, uncapped and including reservations. Demand, not consumption, so it can exceed budgets." /></>} value={fmt(demand.totalDemand)} note={pct(demand.totalDemand, cluster.capacityGpuHours)} />
-        <Tile label={<>Capacity reached <InfoTip text="First day projected concurrent demand would exceed daily capacity, from all projects' uncapped forecasts plus reservations." /></>} value={demand.reached ? dayLabel(demand.reached) : '—'} note={demand.reached ? 'on projected demand' : `peak ${demand.peakPct}% of daily capacity`} />
-        <Tile label="Headroom" value={fmt(headroom)} note={`${headroomPct}% held back`} />
+        <Tile label="Cluster" value={fmt(cluster.gpus)} note="GPUs" />
+        <Tile label="Running now" value={Math.round((runningNow / cluster.gpus) * 100) + '%'} note={`${fmt(runningNow)} GPUs in use`} />
+        <Tile label="Active projects" value={fmt(active)} note={`of ${projects.length}`} />
+        <Tile label="Consumed (in view)" value={fmt(consumed)} note="GPU-h in the window" />
+        <Tile label="Headroom" value={fmt(headroomGpus)} note={`${headroomPct}% of GPUs held back`} />
       </div>
 
       {can('editHeadroom') && (
         <div className="editbar">
           <span className="perm-note perm-on">Operations · admission control</span>
           <label>Headroom</label>
-          <span className="numin">
-            <input type="number" min="0" max="50" step="1" value={headroomPct}
-              onChange={(e) => { setHeadroomPct(Number(e.target.value)); setAdmApplied(false) }} style={{ width: 60 }} />
-            <span className="numin-suffix">% held back</span>
-          </span>
+          <span className="numin"><input type="number" min="0" max="50" step="1" value={headroomPct} onChange={(e) => { setHeadroomPct(Number(e.target.value)); setAdmApplied(false) }} style={{ width: 60 }} /><span className="numin-suffix">% held back</span></span>
           <label>Over-subscription</label>
-          <span className="numin">
-            <input type="number" min="1" max="2" step="0.05" value={oversub}
-              onChange={(e) => { setOversub(Number(e.target.value)); setAdmApplied(false) }} style={{ width: 60 }} />
-            <span className="numin-suffix">×</span>
-          </span>
+          <span className="numin"><input type="number" min="1" max="2" step="0.05" value={oversub} onChange={(e) => { setOversub(Number(e.target.value)); setAdmApplied(false) }} style={{ width: 60 }} /><span className="numin-suffix">×</span></span>
           <button className="btn primary" disabled={!admDirty} onClick={applyAdmission}>Apply to SLURM</button>
-          <span className="hint">
-            {admDirty ? 'Staged.' : admApplied ? 'Applied · would set the org reservation and admission limit.' : 'A grant is allowed while committed demand ≤ capacity × (over-subscription − headroom).'}
-          </span>
+          <span className="hint">{admDirty ? 'Staged.' : admApplied ? 'Applied.' : 'A grant is allowed while committed demand ≤ capacity × (over-subscription − headroom).'}</span>
         </div>
       )}
 
       <div className="card">
         <div className="card-title">
-          Consumption over time {range === 'today' ? '(today, by hour)' : '(by day)'}
-          {' — '}{drilled ? 'by project' : 'by team'}
+          Load over time — {drilled ? 'by project' : 'by team'}
+          <span className="th-unit" style={{ marginLeft: 8 }}>{chart.mode === 'raw' ? 'job-level steps' : 'daily mean concurrency'}</span>
         </div>
-        <div style={{ width: '100%', height: 320 }}>
+        <div style={{ width: '100%', height: 340 }}>
           <ResponsiveContainer>
-            <AreaChart data={rows} margin={{ top: 22, right: 12, left: 8, bottom: 4 }}>
+            <AreaChart data={chart.rows} margin={{ top: 20, right: 14, left: 8, bottom: 4 }}>
               <CartesianGrid stroke="var(--grid)" vertical={false} />
-              <XAxis dataKey="label" tick={{ fill: 'var(--ink-2)', fontSize: 11 }} tickLine={false} axisLine={{ stroke: 'var(--line)' }} minTickGap={16} />
+              <XAxis dataKey="t" type="number" scale="time" domain={[t0, fEnd]} ticks={ticks} tick={{ fill: 'var(--ink-2)', fontSize: 11 }}
+                tickLine={false} axisLine={{ stroke: 'var(--line)' }} tickFormatter={tickFmt} />
               <YAxis tick={{ fill: 'var(--muted)', fontSize: 12 }} tickLine={false} axisLine={false} width={54}
-                tickFormatter={(v) => (yUnit === 'pct' ? Math.round((v / cap) * 100) + '%' : fmt(v))}
-                label={{ value: yUnit === 'pct' ? '% capacity' : 'GPU-h', angle: -90, position: 'insideLeft', fill: 'var(--muted)', fontSize: 11 }} />
-              <Tooltip content={<ChartTooltip colourByLabel={colourByLabel} budgetByLabel={budgetByLabel} yUnit={yUnit} cap={cap} />} cursor={{ stroke: 'var(--ink-2)', strokeWidth: 1 }} />
-              {showForecast && nowLabel && (
-                <ReferenceArea x1={nowLabel} x2={lastLabel} fill="var(--ink-2)" fillOpacity={0.12} />
+                tickFormatter={(v) => (yUnit === 'pct' ? Math.round((v / capGpus) * 100) + '%' : fmt(v))}
+                label={{ value: yUnit === 'pct' ? '% capacity' : 'GPUs', angle: -90, position: 'insideLeft', fill: 'var(--muted)', fontSize: 11 }} />
+              <Tooltip content={<ChartTooltip colourByKey={colourByKey} yUnit={yUnit} capGpus={capGpus} />} cursor={{ stroke: 'var(--ink-2)', strokeWidth: 1 }} />
+              {forecastOn && fEnd > period.nowMs && (
+                <ReferenceArea x1={period.nowMs} x2={fEnd} fill="var(--ink-2)" fillOpacity={0.12} />
               )}
-              {units.map((u) => (
-                <Area key={u.key} type="linear" dataKey={u.key} name={u.label} stackId="use"
-                  stroke="var(--surface)" strokeWidth={0.5} fill={u.colour} fillOpacity={0.95}
-                  activeDot={false} isAnimationActive={false} />
+              {chart.units.map((u) => (
+                <Area key={u.key} type="stepAfter" dataKey={u.key} name={u.key} stackId="load"
+                  stroke="var(--surface)" strokeWidth={0.4} fill={u.colour} fillOpacity={0.95} activeDot={false} isAnimationActive={false} connectNulls />
               ))}
-              <ReferenceLine y={cap} stroke="var(--ink-2)" strokeDasharray="4 4" label={{ value: 'capacity', fill: 'var(--muted)', fontSize: 11, position: 'insideBottomRight' }} />
-              {range !== 'today' && resvViz.map((r) => (
-                <ReferenceArea key={r.id} x1={dayLabel(r.sd)} x2={dayLabel(r.ed + (r.sd === r.ed ? 1 : 0))}
-                  y1={0} y2={r.gpuH} fill={r.colour} fillOpacity={0.9}
-                  stroke="var(--surface)" strokeWidth={1}
-                  label={{ value: `${r.gpus} GPU`, fill: '#fff', fontSize: 10, fontWeight: 600, position: 'insideTop' }} />
+              <ReferenceLine y={capGpus} stroke="var(--ink-2)" strokeDasharray="4 4" label={{ value: 'capacity', fill: 'var(--muted)', fontSize: 11, position: 'insideBottomRight' }} />
+              {resvViz.map((r) => (
+                <ReferenceArea key={r.id} x1={Math.max(r.startMs, t0)} x2={Math.min(r.endMs, fEnd)} y1={0} y2={r.gpus}
+                  fill={r.colour} fillOpacity={0.9} stroke="var(--surface)" strokeWidth={1}
+                  label={{ value: `${r.gpus}`, fill: '#fff', fontSize: 10, fontWeight: 600, position: 'insideTop' }} />
               ))}
-              {nowLabel && <ReferenceLine x={nowLabel} stroke="var(--ink)" strokeWidth={2} ifOverflow="visible" label={{ value: 'now', fill: 'var(--ink)', fontSize: 11, fontWeight: 600, position: 'top' }} />}
+              {fEnd > period.nowMs && t0 < period.nowMs && (
+                <ReferenceLine x={period.nowMs} stroke="var(--ink)" strokeWidth={2} label={{ value: 'now', fill: 'var(--ink)', fontSize: 11, fontWeight: 600, position: 'top' }} />
+              )}
             </AreaChart>
           </ResponsiveContainer>
         </div>
-        <div className="legend-grouped">
-          <div className="lg-row">
-            {units.map((u) => (
-              <span className="lg-item" key={u.key}>
-                <i className="swatch" style={{ background: u.colour }} />{u.label}
-              </span>
-            ))}
-          </div>
-        </div>
+        <div className="legend-grouped"><div className="lg-row">
+          {chart.units.map((u) => <span className="lg-item" key={u.key}><i className="swatch" style={{ background: u.colour }} />{u.key}</span>)}
+        </div></div>
         <p className="note">
-          {drilled
-            ? 'Each band is one project in the scoped team; the stack is that team’s load.'
-            : 'Each band is one team’s total consumption (with personal and organisation work separate); the stack is the whole cluster’s load. Scope to a team to split its band into projects.'}
-          {' '}Right of the “now” line is forecast over the chosen horizon. The dashed line
-          marks nominal cluster capacity. Reservations show as solid blocks in their team’s
-          colour, positioned over their window and sized by the GPU-hours they hold; the
-          Reservations table below lists who holds each.
+          Each step is a job starting or ending. Actuals are drawn as steps with no
+          smoothing between known points; right of the “now” line is forecast. Wide ranges
+          switch to a daily mean so the picture stays legible; zoom in (7d, Today) for the
+          job-level detail. Reservations show as solid blocks in their team’s colour.
         </p>
       </div>
 
       <div className="card">
-        <div className="card-title" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
-          <span>Projects this period</span>
-          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontWeight: 400, fontSize: 13 }}>
-            <label className="hint" style={{ margin: 0 }}>Forecast model</label>
-            <select value={fcMethod} onChange={(e) => setFcMethod(e.target.value)}>
-              <option value="recent">Recent rate, capped</option>
-              <option value="linear">Linear from start</option>
-              <option value="spline" disabled>Spline / trend (planned)</option>
-              <option value="ml" disabled>Learned model (planned)</option>
-            </select>
-          </span>
+        <div className="card-title" style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+          <span>Projects in view <span className="th-unit">{tableRows.length} overlapping this window</span></span>
         </div>
         <p className="hint" style={{ marginTop: 0 }}>
-          Select a row to show that project’s forecast in the chart above.
+          Select a row to scope the chart to that project.
           {drilled && <> <button className="linkbtn" onClick={() => setScope('all')}>Back to all teams</button></>}
         </p>
         <div className="tbl-scroll">
-        <DataTable
-          onRowClick={(p) => setScope('project:' + p.id)}
-          selectedId={scope.startsWith('project:') ? scope.split(':')[1] : null}
-          initialSort={{ key: 'budget', dir: 'desc' }}
-          columns={[
-            { key: 'name', label: 'Project', render: (p) => (p.funding === 'person' ? <span className="tag">personal</span> : p.name) },
-            { key: 'owner', label: 'Owner', sortValue: (p) => projectOwner(p), render: (p) => projectOwner(p) },
-            { key: 'budget', label: 'Budget', num: true, render: (p) => fmt(p.budget) },
-            { key: 'used', label: 'Used', num: true, render: (p) => fmt(p.used) },
-            { key: 'remaining', label: 'Left', num: true, sortValue: (p) => p.budget - p.used, render: (p) => fmt(Math.max(0, p.budget - p.used)) },
-            {
-              key: 'progress', label: 'Consumption', sortable: false,
-              render: (p) => (
-                <div className="meter" title={`${Math.round((p.used / p.budget) * 100)}% of budget used`}>
-                  <span style={{ width: Math.min(100, (p.used / p.budget) * 100) + '%' }} />
-                </div>
-              ),
-            },
-            {
-              key: 'forecast', label: <>Forecast use <InfoTip text="Projected consumption, capped at the budget: what will actually run." /></>, num: true, thClass: 'fc-col fc-first', tdClass: 'fc-col fc-first',
-              sortValue: (p) => forecastEnd(p, fcMethod),
-              render: (p) => fmt(forecastEnd(p, fcMethod)),
-            },
-            {
-              key: 'demand', label: <>Demand <InfoTip text="Projected demand if uncapped, including reservations. Planned load, so it can exceed the budget." /></>, num: true, thClass: 'fc-col', tdClass: 'fc-col',
-              sortValue: (p) => uncappedEnd(p, fcMethod),
-              render: (p) => fmt(uncappedEnd(p, fcMethod)),
-            },
-            {
-              key: 'over', label: 'Over budget', num: true, thClass: 'fc-col', tdClass: 'fc-col',
-              sortValue: (p) => Math.max(0, uncappedEnd(p, fcMethod) - p.budget),
-              render: (p) => {
-                const o = Math.max(0, Math.round(uncappedEnd(p, fcMethod) - p.budget))
-                return o > 0 ? <span className="tag warn">+{fmt(o)} ({Math.round((o / p.budget) * 100)}%)</span> : <span className="hint">—</span>
-              },
-            },
-            {
-              key: 'exhaust', label: 'Budget runs out', thClass: 'fc-col', tdClass: 'fc-col',
-              sortValue: (p) => exhaustBy(p, fcMethod) ?? 999,
-              render: (p) => {
-                const d = exhaustBy(p, fcMethod)
-                return d ? <span className="tag warn">~{dayLabel(d)} ({Math.max(0, d - period.today)}d)</span> : <span className="hint">within budget</span>
-              },
-            },
-          ]}
-          rows={projects}
-        />
+          <DataTable
+            onRowClick={(p) => setScope('project:' + p.id)}
+            selectedId={scope.startsWith('project:') ? scope.split(':')[1] : null}
+            initialSort={{ key: 'used', dir: 'desc' }}
+            columns={[
+              { key: 'name', label: 'Project', render: (p) => (p.funding === 'person' ? <span className="tag">personal</span> : p.name) },
+              { key: 'owner', label: 'Owner', sortValue: (p) => projectOwner(p), render: (p) => projectOwner(p) },
+              { key: 'state', label: 'State', sortValue: (p) => projectState(p), render: (p) => <StateTag p={p} /> },
+              { key: 'budget', label: 'Budget', num: true, render: (p) => fmt(p.budget) },
+              { key: 'used', label: 'Used', num: true, render: (p) => fmt(p.used) },
+              { key: 'left', label: 'Left', num: true, sortValue: (p) => p.budget - p.used, render: (p) => fmt(Math.max(0, p.budget - p.used)) },
+              { key: 'prog', label: 'Consumption', sortable: false, render: (p) => (<div className="meter" title={`${Math.round((p.used / p.budget) * 100)}%`}><span style={{ width: Math.min(100, (p.used / p.budget) * 100) + '%' }} /></div>) },
+              { key: 'fc', label: <>Forecast use <InfoTip text="Projected consumption to the project's end, capped at its budget." /></>, num: true, thClass: 'fc-col fc-first', tdClass: 'fc-col fc-first', sortValue: (p) => fEndUse(p), render: (p) => fmt(fEndUse(p)) },
+              { key: 'demand', label: <>Demand <InfoTip text="Same projection uncapped; can exceed the budget." /></>, num: true, thClass: 'fc-col', tdClass: 'fc-col', sortValue: (p) => demandEnd(p), render: (p) => fmt(demandEnd(p)) },
+              { key: 'over', label: 'Over budget', num: true, thClass: 'fc-col', tdClass: 'fc-col', sortValue: (p) => Math.max(0, demandEnd(p) - p.budget), render: (p) => { const o = Math.max(0, Math.round(demandEnd(p) - p.budget)); return o > 0 ? <span className="tag warn">+{fmt(o)} ({Math.round(o / p.budget * 100)}%)</span> : <span className="hint">—</span> } },
+              { key: 'runs', label: 'Budget runs out', thClass: 'fc-col', tdClass: 'fc-col', sortValue: (p) => runsOut(p) ?? Infinity, render: (p) => { const d = runsOut(p); return d ? <span className="tag warn">~{fmtDay(d)}</span> : <span className="hint">within budget</span> } },
+            ]}
+            rows={tableRows}
+          />
         </div>
         <p className="hint">
-          The shaded columns are forecast to the end of the period ({dayLabel(period.totalDays)}),
-          using the model chosen above (recent rate or linear; spline and learned models
-          are where trained predictors will plug in). <b>Forecast use</b> is projected
-          consumption, capped at the budget: what will actually run. <b>Demand</b> is the
-          same projection uncapped and including reservations, so <b>Over budget</b> shows
-          how far a project threatens to exceed its budget. <b>Budget runs out</b> is when
-          consumption would hit the cap.
+          The shaded columns are forecast to each project’s end from its recent job rate.
+          <b> Forecast use</b> is capped at the budget; <b>Demand</b> is uncapped, so <b>Over
+          budget</b> shows how far a project threatens to exceed it.
         </p>
       </div>
 
       <div className="card">
-        <div className="card-title">Reservations</div>
+        <div className="card-title">Reservations near now</div>
         <DataTable
           initialSort={{ key: 'start', dir: 'asc' }}
           columns={[
-            { key: 'start', label: 'Window', sortValue: (r) => r.start, render: (r) => (r.start === r.end ? r.start : `${r.start} to ${r.end}`) },
+            { key: 'start', label: 'Window', sortValue: (r) => r.startMs, render: (r) => `${fmtDay(r.startMs)} – ${fmtDay(r.endMs)}` },
             { key: 'project', label: 'Project', sortValue: (r) => projName(r.projectId), render: (r) => projName(r.projectId) },
             { key: 'label', label: 'What' },
             { key: 'gpus', label: 'GPUs', num: true },
@@ -574,50 +347,25 @@ export default function ConsumptionReservations() {
   )
 }
 
-// Forecast total consumption by end of period under the chosen model, never
-// exceeding the budget. 'recent' continues the recent-rate (capped) buckets;
-// 'linear' extends the average rate since the period start.
-function forecastEnd(p, method = 'recent') {
-  const steps = period.totalDays - period.today
-  const active = Math.max(0, endDay(p) - period.today)
-  if (method === 'linear') {
-    const rate = period.today > 0 ? p.used / period.today : 0
-    return Math.min(p.budget, p.used + rate * Math.min(steps, active))
-  }
-  const fc = forecastBuckets(p, dailyIncrements(p), steps, active)
-  return p.used + fc.reduce((s, v) => s + v, 0)
+// forecast helpers for the table (per project, to its own end)
+function daysToEnd(p) { return Math.max(0, (Math.min(p.endMs, period.endMs) - period.nowMs) / DAY) }
+function demandEnd(p) { return Math.round(p.used + recentDailyRate(p) * daysToEnd(p)) }
+function fEndUse(p) { return Math.round(Math.min(p.budget, p.used + recentDailyRate(p) * daysToEnd(p))) }
+function runsOut(p) {
+  const rate = recentDailyRate(p)
+  if (rate <= 0 || p.used >= p.budget) return null
+  const d = period.nowMs + ((p.budget - p.used) / rate) * DAY
+  return d <= Math.min(p.endMs, period.endMs) ? d : null
 }
-
-// Day the project exhausts its budget under the chosen model, or null if it
-// stays within budget through the period.
-function exhaustBy(p, method = 'recent') {
-  const active = Math.max(0, endDay(p) - period.today)
-  if (method === 'linear') return exhaustionDay(p)
-  const fc = forecastBuckets(p, dailyIncrements(p), period.totalDays - period.today, active)
-  let remaining = p.budget - p.used
-  for (let i = 0; i < fc.length; i++) {
-    remaining -= fc[i]
-    if (remaining <= 0) return period.today + i + 1
-  }
-  return null
-}
-
 function projName(id) { return projects.find((p) => p.id === id)?.name ?? id }
 
-function Tile({ label, value, note }) {
-  return (
-    <div className="tile">
-      <div className="tile-label">{label}</div>
-      <div className="tile-value">{value}</div>
-      {note && <div className="tile-note">{note}</div>}
-    </div>
-  )
+function StateTag({ p }) {
+  const s = projectState(p)
+  if (s === 'active') return <span className="tag ok">active</span>
+  if (s === 'planned') return <span className="tag">planned</span>
+  return <span className="hint">finished</span>
 }
 
-function pct(part, whole) { return Math.round((part / whole) * 100) + '% of capacity' }
-function rangeNote(range) {
-  if (range === 'today') return 'today so far'
-  if (range === 'last7') return 'last 7 days'
-  if (range === 'last14') return 'last 14 days'
-  return 'selected window'
+function Tile({ label, value, note }) {
+  return (<div className="tile"><div className="tile-label">{label}</div><div className="tile-value">{value}</div>{note && <div className="tile-note">{note}</div>}</div>)
 }
