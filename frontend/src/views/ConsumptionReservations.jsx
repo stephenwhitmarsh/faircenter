@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   ReferenceLine, ReferenceArea, Brush,
@@ -149,12 +149,17 @@ export default function ConsumptionReservations() {
   const [headroomPct, setHeadroomPct] = useState(Math.round(parameters.headroom.org * 100))
   const [oversub, setOversub] = useState(parameters.oversubscriptionFactor)
   const [admApplied, setAdmApplied] = useState(false)
-  const [sel, setSel] = useState(null) // {a,b} time window dragged on the chart
+  const [sel, setSel] = useState(null) // {a,b} table window painted on the chart
+  const [dragSel, setDragSel] = useState(null) // live drag highlight
+  const dragRef = useRef(null)
+  // the visible window; presets/forecast set it, and the navigator strip pans/zooms it
+  const [viewWin, setViewWin] = useState(() => windowFor('30d', { from: '', to: '' }, 0.5))
+  useEffect(() => { setViewWin(windowFor(range, custom, fcPct)) }, [range, custom.from, custom.to, fcPct]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const subset = projListForScope(scope)
   const keyOf = scope === 'all' ? keyOfAll : (p) => p.name
   const fcOn = fcPct > 0
-  const { t0, fEnd } = windowFor(range, custom, fcPct)
+  const { t0, fEnd } = viewWin
   const tActualEnd = Math.min(fEnd, period.nowMs)
 
   const chart = useMemo(() => {
@@ -164,10 +169,21 @@ export default function ConsumptionReservations() {
     for (const r of [...act.rows, ...fc.rows]) for (const k of Object.keys(r)) if (k !== 't' && k !== 'forecast' && r[k] > 0) present.add(k)
     const units = orderedBuckets(scope, subset, present)
     return { rows: [...act.rows, ...fc.rows], units, mode: act.mode }
-  }, [scope, range, custom, fcPct, fcMethod]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [scope, t0, fEnd, fcOn, fcMethod]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const colourByKey = Object.fromEntries(chart.units.map((u) => [u.key, u.colour]))
   const capGpus = cluster.gpus
+  // full-range overview for the navigator strip
+  const overviewRows = useMemo(() => loadSeries(projects, period.startMs, period.endMs, () => 'load').rows, [])
+  const ov0 = overviewRows.length ? overviewRows[0].t : period.startMs
+  const ovIdx = (t) => Math.max(0, Math.min(overviewRows.length - 1, Math.round((t - ov0) / DAY)))
+  const navStart = ovIdx(t0)
+  const navEnd = Math.min(overviewRows.length - 1, Math.max(ovIdx(fEnd), navStart + 1))
+  const onNav = (r) => {
+    if (!r || r.startIndex == null || r.endIndex == null || r.endIndex <= r.startIndex) return
+    const a = overviewRows[r.startIndex].t, b = overviewRows[r.endIndex].t
+    if (a !== t0 || b !== fEnd) setViewWin({ t0: a, fEnd: b })
+  }
   const drilled = scope !== 'all'
 
   // reservations visible in this scope + window
@@ -289,9 +305,13 @@ export default function ConsumptionReservations() {
           Load over time — {drilled ? 'by project' : 'by team'}
           <span className="th-unit" style={{ marginLeft: 8 }}>{chart.mode === 'raw' ? 'job-level steps' : 'daily mean concurrency'}</span>
         </div>
-        <div style={{ width: '100%', height: 370 }}>
+        <div style={{ width: '100%', height: 330 }}>
           <ResponsiveContainer>
-            <AreaChart data={chart.rows} margin={{ top: 20, right: 14, left: 8, bottom: 4 }}>
+            <AreaChart data={chart.rows} margin={{ top: 20, right: 14, left: 8, bottom: 4 }}
+              onMouseDown={(e) => { if (e && e.activeLabel != null) { dragRef.current = { a: e.activeLabel, b: e.activeLabel }; setDragSel({ a: e.activeLabel, b: e.activeLabel }) } }}
+              onMouseMove={(e) => { if (dragRef.current && e && e.activeLabel != null) { dragRef.current.b = e.activeLabel; setDragSel({ a: dragRef.current.a, b: e.activeLabel }) } }}
+              onMouseUp={() => { const d = dragRef.current; dragRef.current = null; setDragSel(null); if (d) { const a = Math.min(d.a, d.b), b = Math.max(d.a, d.b); setSel(b - a > 30 * 60 * 1000 ? { a, b } : null) } }}
+              onMouseLeave={() => { const d = dragRef.current; dragRef.current = null; setDragSel(null); if (d) { const a = Math.min(d.a, d.b), b = Math.max(d.a, d.b); if (b - a > 30 * 60 * 1000) setSel({ a, b }) } }}>
               <CartesianGrid stroke="var(--grid)" vertical={false} />
               <XAxis dataKey="t" type="number" scale="time" domain={[t0, fEnd]} ticks={ticks} tick={{ fill: 'var(--ink-2)', fontSize: 11 }}
                 tickLine={false} axisLine={{ stroke: 'var(--line)' }} tickFormatter={tickFmt} />
@@ -309,21 +329,36 @@ export default function ConsumptionReservations() {
               <ReferenceLine y={capGpus} stroke="var(--ink-2)" strokeDasharray="4 4" label={{ value: 'capacity', fill: 'var(--muted)', fontSize: 11, position: 'insideBottomRight' }} />
               {resvViz.map((r) => (
                 <ReferenceArea key={r.id} x1={Math.max(r.startMs, t0)} x2={Math.min(r.endMs, fEnd)} y1={0} y2={r.gpus}
-                  fill={r.colour} fillOpacity={0.9} stroke="var(--surface)" strokeWidth={1}
-                  label={{ value: `${r.gpus}`, fill: '#fff', fontSize: 10, fontWeight: 600, position: 'insideTop' }} />
+                  fill={r.colour} fillOpacity={0.9} stroke="var(--surface)" strokeWidth={1} />
               ))}
+              {sel && !dragSel && (
+                <ReferenceArea x1={sel.a} x2={sel.b} fill="var(--accent)" fillOpacity={0.1} stroke="var(--accent)" strokeOpacity={0.5} strokeWidth={1} />
+              )}
+              {dragSel && (
+                <ReferenceArea x1={Math.min(dragSel.a, dragSel.b)} x2={Math.max(dragSel.a, dragSel.b)} fill="var(--accent)" fillOpacity={0.18} />
+              )}
               {fEnd > period.nowMs && t0 < period.nowMs && (
                 <ReferenceLine x={period.nowMs} stroke="var(--ink)" strokeWidth={2} label={{ value: 'now', fill: 'var(--ink)', fontSize: 11, fontWeight: 600, position: 'top' }} />
               )}
-              <Brush dataKey="t" height={20} travellerWidth={8} stroke="var(--ink-2)" fill="var(--surface)" tickFormatter={fmtDay}
-                onChange={(r) => {
-                  if (!r || r.startIndex == null || r.endIndex == null) return
-                  if (r.endIndex <= r.startIndex || (r.startIndex <= 0 && r.endIndex >= chart.rows.length - 1)) { setSel(null); return }
-                  setSel({ a: chart.rows[r.startIndex].t, b: chart.rows[r.endIndex].t })
-                }} />
             </AreaChart>
           </ResponsiveContainer>
         </div>
+        <div style={{ width: '100%', height: 56 }}>
+          <ResponsiveContainer>
+            <AreaChart data={overviewRows} margin={{ top: 2, right: 14, left: 8, bottom: 0 }}>
+              <XAxis dataKey="t" type="number" domain={[period.startMs, period.endMs]} hide />
+              <YAxis hide domain={[0, capGpus]} />
+              <Area type="stepAfter" dataKey="load" stroke="none" fill="var(--ink-2)" fillOpacity={0.3} isAnimationActive={false} />
+              <ReferenceLine x={period.nowMs} stroke="var(--ink-2)" strokeDasharray="2 2" />
+              <Brush dataKey="t" height={28} travellerWidth={9} stroke="var(--accent)" fill="var(--surface)" tickFormatter={fmtDay}
+                startIndex={navStart} endIndex={navEnd} onChange={onNav} />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+        <p className="hint" style={{ marginTop: 2 }}>
+          Drag the strip to move or resize the visible window across the full timeline
+          (May 2025 – Dec 2026). Drag directly on the chart above to select a period for the tables.
+        </p>
         <div className="legend-grouped"><div className="lg-row">
           {chart.units.map((u) => <span className="lg-item" key={u.key}><i className="swatch" style={{ background: u.colour }} />{u.key}</span>)}
         </div></div>
