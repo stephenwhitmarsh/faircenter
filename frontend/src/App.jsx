@@ -13,10 +13,10 @@ import { SessionProvider, useSession, actorFor } from './session.jsx'
 const TABS = [
   { id: 'people', label: 'People', component: People },
   { id: 'budgets', label: 'Budgets', component: Budgets },
-  { id: 'consumption', label: 'Consumption & reservations', component: ConsumptionReservations },
-  { id: 'policy', label: 'Policy & parameters', component: PolicyParameters },
+  { id: 'consumption', label: 'Planning', component: ConsumptionReservations },
+  { id: 'policy', label: 'Policy', component: PolicyParameters },
+  { id: 'requests', label: 'Requests', component: Requests },
   { id: 'analytics', label: 'Analytics', component: Analytics },
-  { id: 'requests', label: 'Requests for changes', component: Requests },
 ]
 
 function RoleSwitcher() {

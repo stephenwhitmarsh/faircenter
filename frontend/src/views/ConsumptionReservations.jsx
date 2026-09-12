@@ -151,12 +151,19 @@ function buildSeries(range, units, custom, forecast, method) {
     ds = toDay(custom.from) ?? 1
     de = toDay(custom.to) ?? period.today
     if (ds > de) [ds, de] = [de, ds]
+  } else if (range === 'total') {
+    ds = Math.max(1, Math.min(...allP.map((p) => (p.start ? Number(p.start.slice(-2)) : 1))))
+    de = period.today
   } else {
     de = period.today
-    ds = range === 'last7' ? period.today - 6 : period.today - 13
+    ds = period.today - 6
     ds = Math.max(1, ds)
   }
-  const hd = horizonDays(forecast)
+  let hd = horizonDays(forecast)
+  if (range === 'total') {
+    const maxEnd = Math.max(period.today, ...allP.map((p) => endDay(p)))
+    hd = Math.max(0, Math.min(period.totalDays, maxEnd) - period.today)
+  }
   const fcEnd = period.today + hd
   const showForecast = fcOn && de >= period.today
 
@@ -297,7 +304,7 @@ function ScopePicker({ value, onChange }) {
 
 export default function ConsumptionReservations() {
   const [scope, setScope] = useState('all')
-  const [range, setRange] = useState('today')
+  const [range, setRange] = useState('total')
   const [forecast, setForecast] = useState('14')
   const [yUnit, setYUnit] = useState('gpuh')
   const [fcMethod, setFcMethod] = useState('recent')
@@ -315,6 +322,15 @@ export default function ConsumptionReservations() {
   )
   const colourByLabel = Object.fromEntries(units.map((u) => [u.label, u.colour]))
   const budgetByLabel = Object.fromEntries(units.map((u) => [u.label, u.projects.reduce((s, p) => s + p.budget, 0)]))
+  // reservations that belong to a project in the current scope, coloured by
+  // their band and sized by the GPU-hours they hold
+  const capDaily = cluster.capacityGpuHours / period.totalDays
+  const resvViz = reservations.map((r) => {
+    const u = units.find((uu) => uu.projects.some((p) => p.id === r.projectId))
+    if (!u) return null
+    const sd = Number(r.start.slice(-2)), ed = Number((r.end || r.start).slice(-2))
+    return { ...r, colour: u.colour, team: u.label, proj: projName(r.projectId), gpuH: r.gpus * 24, sd, ed }
+  }).filter(Boolean)
   // nominal capacity per time bucket, used for the % view and the capacity line
   const cap = range === 'today'
     ? cluster.capacityGpuHours / (period.totalDays * 24)
@@ -337,12 +353,12 @@ export default function ConsumptionReservations() {
   return (
     <section>
       <div className="view-head">
-        <h2 className="view-title">Consumption &amp; reservations</h2>
+        <h2 className="view-title">Planning</h2>
         <p className="view-intro">
-          Total GPU consumption over time, stacked by team so the whole shows the load
-          on the cluster. Scope to a team to break its band into projects. Past “now”
-          the load is forecast from each project’s recent rate, capped at the budget it
-          has left, over a rolling horizon you choose.
+          GPU load over time, stacked by team so the whole shows the load on the cluster.
+          Scope to a team, project or person to break the band down. Past “now” the load
+          is forecast; reservations hold GPUs for set windows and show as blocks on the
+          load. This is where consumption, forecast and reservations are read together.
         </p>
       </div>
 
@@ -354,7 +370,7 @@ export default function ConsumptionReservations() {
         <div className="seg">
           <button className={range === 'today' ? 'active' : ''} onClick={() => setRange('today')}>Today</button>
           <button className={range === 'last7' ? 'active' : ''} onClick={() => setRange('last7')}>Last 7 days</button>
-          <button className={range === 'last14' ? 'active' : ''} onClick={() => setRange('last14')}>Last 14 days</button>
+          <button className={range === 'total' ? 'active' : ''} onClick={() => setRange('total')}>Total</button>
           <button className={range === 'custom' ? 'active' : ''} onClick={() => setRange('custom')}>Custom</button>
         </div>
         {range === 'custom' && (
@@ -387,7 +403,6 @@ export default function ConsumptionReservations() {
         <Tile label={<>Projected demand <InfoTip text="Every project's recent rate continued to its end date, uncapped and including reservations. Demand, not consumption, so it can exceed budgets." /></>} value={fmt(demand.totalDemand)} note={pct(demand.totalDemand, cluster.capacityGpuHours)} />
         <Tile label={<>Capacity reached <InfoTip text="First day projected concurrent demand would exceed daily capacity, from all projects' uncapped forecasts plus reservations." /></>} value={demand.reached ? dayLabel(demand.reached) : '—'} note={demand.reached ? 'on projected demand' : `peak ${demand.peakPct}% of daily capacity`} />
         <Tile label="Headroom" value={fmt(headroom)} note={`${headroomPct}% held back`} />
-        <Tile label="Still free" value={fmt(stillFree)} note={pct(stillFree, cluster.capacityGpuHours)} />
       </div>
 
       {can('editHeadroom') && (
@@ -435,9 +450,11 @@ export default function ConsumptionReservations() {
                   activeDot={false} isAnimationActive={false} />
               ))}
               <ReferenceLine y={cap} stroke="var(--ink-2)" strokeDasharray="4 4" label={{ value: 'capacity', fill: 'var(--muted)', fontSize: 11, position: 'insideBottomRight' }} />
-              {range !== 'today' && reservations.map((r) => (
-                <ReferenceLine key={r.id} x={dayLabel(Number(r.start.slice(-2)))} stroke="var(--warning)" strokeDasharray="2 3"
-                  label={{ value: `resv ${r.gpus}`, fill: 'var(--warning)', fontSize: 10, position: 'insideTopLeft' }} />
+              {range !== 'today' && resvViz.map((r) => (
+                <ReferenceArea key={r.id} x1={dayLabel(r.sd)} x2={dayLabel(r.ed + (r.sd === r.ed ? 1 : 0))}
+                  y1={0} y2={r.gpuH} fill={r.colour} fillOpacity={0.9}
+                  stroke="var(--surface)" strokeWidth={1}
+                  label={{ value: `${r.gpus} GPU`, fill: '#fff', fontSize: 10, fontWeight: 600, position: 'insideTop' }} />
               ))}
               {nowLabel && <ReferenceLine x={nowLabel} stroke="var(--ink)" strokeWidth={2} ifOverflow="visible" label={{ value: 'now', fill: 'var(--ink)', fontSize: 11, fontWeight: 600, position: 'top' }} />}
             </AreaChart>
@@ -457,8 +474,9 @@ export default function ConsumptionReservations() {
             ? 'Each band is one project in the scoped team; the stack is that team’s load.'
             : 'Each band is one team’s total consumption (with personal and organisation work separate); the stack is the whole cluster’s load. Scope to a team to split its band into projects.'}
           {' '}Right of the “now” line is forecast over the chosen horizon. The dashed line
-          marks nominal cluster capacity; amber markers show reservation windows, whose
-          held GPUs floor the forecast so they appear as a bump on the load.
+          marks nominal cluster capacity. Reservations show as solid blocks in their team’s
+          colour, positioned over their window and sized by the GPU-hours they hold; the
+          Reservations table below lists who holds each.
         </p>
       </div>
 
@@ -488,8 +506,8 @@ export default function ConsumptionReservations() {
             { key: 'name', label: 'Project', render: (p) => (p.funding === 'person' ? <span className="tag">personal</span> : p.name) },
             { key: 'owner', label: 'Owner', sortValue: (p) => projectOwner(p), render: (p) => projectOwner(p) },
             { key: 'budget', label: 'Budget', num: true, render: (p) => fmt(p.budget) },
-            { key: 'used', label: 'Used to date', num: true, render: (p) => fmt(p.used) },
-            { key: 'remaining', label: 'Remaining', num: true, sortValue: (p) => p.budget - p.used, render: (p) => fmt(Math.max(0, p.budget - p.used)) },
+            { key: 'used', label: 'Used', num: true, render: (p) => fmt(p.used) },
+            { key: 'remaining', label: 'Left', num: true, sortValue: (p) => p.budget - p.used, render: (p) => fmt(Math.max(0, p.budget - p.used)) },
             {
               key: 'progress', label: 'Consumption', sortable: false,
               render: (p) => (
@@ -513,7 +531,7 @@ export default function ConsumptionReservations() {
               sortValue: (p) => Math.max(0, uncappedEnd(p, fcMethod) - p.budget),
               render: (p) => {
                 const o = Math.max(0, Math.round(uncappedEnd(p, fcMethod) - p.budget))
-                return o > 0 ? <span className="tag warn">+{fmt(o)}</span> : <span className="hint">—</span>
+                return o > 0 ? <span className="tag warn">+{fmt(o)} ({Math.round((o / p.budget) * 100)}%)</span> : <span className="hint">—</span>
               },
             },
             {

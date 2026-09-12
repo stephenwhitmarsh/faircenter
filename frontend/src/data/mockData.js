@@ -276,13 +276,37 @@ export function exhaustionDay(project) {
   return day <= period.totalDays ? Math.round(day) : null
 }
 
-// Cross-period history for Analytics: monthly cluster utilisation (%) and
-// committed demand (GPU-hours) over the past months. Illustrative.
-export const history = [
-  { month: 'Apr', util: 61, demand: 33000 },
-  { month: 'May', util: 66, demand: 36000 },
-  { month: 'Jun', util: 72, demand: 38000 },
-  { month: 'Jul', util: 78, demand: 41000 },
-  { month: 'Aug', util: 83, demand: 44000 },
-  { month: 'Sep', util: 88, demand: 46000 },
+// Cross-period KPI history for Analytics. Each period carries the summary
+// indicators drawn from the Planning and Budgets views; the last periods are
+// forecast. Illustrative. paramEvents mark when a policy value changed, so an
+// indicator's move can be read against it.
+export const kpiHistory = [
+  { period: 'Apr', forecast: false, util: 61, consumed: 29000, committed: 33000, waitFast: 15, waitStd: 44, spent50: 47, changes: 9, overBudget: 1, unusedHeadroom: 9, alignment: 0.72 },
+  { period: 'May', forecast: false, util: 66, consumed: 31000, committed: 36000, waitFast: 13, waitStd: 42, spent50: 49, changes: 11, overBudget: 2, unusedHeadroom: 8, alignment: 0.75 },
+  { period: 'Jun', forecast: false, util: 72, consumed: 34000, committed: 38000, waitFast: 11, waitStd: 41, spent50: 51, changes: 12, overBudget: 2, unusedHeadroom: 7, alignment: 0.78 },
+  { period: 'Jul', forecast: false, util: 78, consumed: 37000, committed: 41000, waitFast: 9, waitStd: 40, spent50: 52, changes: 10, overBudget: 3, unusedHeadroom: 7, alignment: 0.80 },
+  { period: 'Aug', forecast: false, util: 83, consumed: 40000, committed: 44000, waitFast: 8, waitStd: 41, spent50: 52, changes: 14, overBudget: 3, unusedHeadroom: 6, alignment: 0.83 },
+  { period: 'Sep', forecast: false, util: 86, consumed: 42000, committed: 46000, waitFast: 7, waitStd: 41, spent50: 52, changes: 13, overBudget: 2, unusedHeadroom: 6, alignment: 0.84 },
+  { period: 'Oct', forecast: true, util: 88, consumed: 44000, committed: 47000, waitFast: 8, waitStd: 42, spent50: 53, changes: 12, overBudget: 3, unusedHeadroom: 6, alignment: 0.84 },
+  { period: 'Nov', forecast: true, util: 90, consumed: 45500, committed: 48000, waitFast: 8, waitStd: 43, spent50: 54, changes: 12, overBudget: 3, unusedHeadroom: 5, alignment: 0.85 },
+]
+
+// A policy change and the period it took effect, for overlaying on KPI trends.
+export const paramEvents = [
+  { period: 'Jun', label: 'fast lane +50 priority' },
+  { period: 'Aug', label: 'headroom 10% → 8%' },
+]
+
+// The KPIs Analytics can chart, with how to read and format each.
+export const KPIS = [
+  { key: 'util', label: 'Utilisation', unit: '%', better: 'high' },
+  { key: 'consumed', label: 'Consumed', unit: 'GPU-h', better: 'neutral' },
+  { key: 'committed', label: 'Committed demand', unit: 'GPU-h', better: 'neutral' },
+  { key: 'waitFast', label: 'Median wait, fast lane', unit: 'min', better: 'low' },
+  { key: 'waitStd', label: 'Median wait, standard', unit: 'min', better: 'low' },
+  { key: 'spent50', label: 'Budget spent at mid-period', unit: '%', better: 'neutral' },
+  { key: 'changes', label: 'Change requests', unit: '', better: 'low' },
+  { key: 'overBudget', label: 'Projects over budget', unit: '', better: 'low' },
+  { key: 'unusedHeadroom', label: 'Unused headroom', unit: '%', better: 'low' },
+  { key: 'alignment', label: 'Priority–usage alignment', unit: '', better: 'high' },
 ]
