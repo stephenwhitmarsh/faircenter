@@ -196,6 +196,15 @@ export default function ConsumptionReservations() {
   const resvRows = sel
     ? reservations.filter((r) => r.endMs >= sel.a && r.startMs <= sel.b)
     : reservations.filter((r) => r.endMs >= period.nowMs && r.startMs <= fEnd)
+  // budget/used/left reflect the dragged window when there is one, else the whole project
+  const winBudget = (p) => {
+    if (!sel) return p.budget
+    const ov = Math.max(0, Math.min(sel.b, p.endMs) - Math.max(sel.a, p.startMs))
+    const dur = (p.endMs - p.startMs) || 1
+    return Math.round(p.budget * Math.min(1, ov / dur))
+  }
+  const winUsed = (p) => (sel ? consumedGpuH([p], sel.a, sel.b) : p.used)
+  const winLeft = (p) => Math.max(0, winBudget(p) - winUsed(p))
 
   // regular, aligned x-axis ticks so dense actual data does not crush the labels
   const span = fEnd - t0
@@ -332,7 +341,8 @@ export default function ConsumptionReservations() {
         </div>
         <p className="hint" style={{ marginTop: 0 }}>
           Drag over the chart to pick a time window; with none, this shows projects active
-          now. {sel && <button className="linkbtn" onClick={() => setSel(null)}>Clear selection</button>}
+          now. With a window selected, Budget, Used and Left are for that window; otherwise
+          they are each project’s total. {sel && <button className="linkbtn" onClick={() => setSel(null)}>Clear selection</button>}
           {' '}Select a row to scope the chart to that project.
           {drilled && <> <button className="linkbtn" onClick={() => setScope('all')}>Back to all teams</button></>}
         </p>
@@ -345,10 +355,10 @@ export default function ConsumptionReservations() {
               { key: 'name', label: 'Project', render: (p) => (p.funding === 'person' ? <span className="tag">personal</span> : p.name) },
               { key: 'owner', label: 'Owner', sortValue: (p) => projectOwner(p), render: (p) => projectOwner(p) },
               { key: 'state', label: 'State', sortValue: (p) => projectState(p), render: (p) => <StateTag p={p} /> },
-              { key: 'budget', label: 'Budget', num: true, render: (p) => fmt(p.budget) },
-              { key: 'used', label: 'Used', num: true, render: (p) => fmt(p.used) },
-              { key: 'left', label: 'Left', num: true, sortValue: (p) => p.budget - p.used, render: (p) => fmt(Math.max(0, p.budget - p.used)) },
-              { key: 'prog', label: 'Consumption', sortable: false, render: (p) => (<div className="meter" title={`${Math.round((p.used / p.budget) * 100)}%`}><span style={{ width: Math.min(100, (p.used / p.budget) * 100) + '%' }} /></div>) },
+              { key: 'budget', label: 'Budget', num: true, sortValue: (p) => winBudget(p), render: (p) => fmt(winBudget(p)) },
+              { key: 'used', label: 'Used', num: true, sortValue: (p) => winUsed(p), render: (p) => fmt(winUsed(p)) },
+              { key: 'left', label: 'Left', num: true, sortValue: (p) => winLeft(p), render: (p) => fmt(winLeft(p)) },
+              { key: 'prog', label: 'Consumption', sortable: false, render: (p) => { const b = winBudget(p) || 1; const pc = Math.min(100, (winUsed(p) / b) * 100); return (<div className="meter" title={`${Math.round((winUsed(p) / b) * 100)}%`}><span style={{ width: pc + '%' }} /></div>) } },
               { key: 'fc', label: <>Forecast use <InfoTip text="Projected consumption to the project's end, capped at its budget." /></>, num: true, thClass: 'fc-col fc-first', tdClass: 'fc-col fc-first', sortValue: (p) => fEndUse(p, fcMethod), render: (p) => fmt(fEndUse(p, fcMethod)) },
               { key: 'demand', label: <>Demand <InfoTip text="Same projection uncapped; can exceed the budget." /></>, num: true, thClass: 'fc-col', tdClass: 'fc-col', sortValue: (p) => demandEnd(p, fcMethod), render: (p) => fmt(demandEnd(p, fcMethod)) },
               { key: 'diff', label: <>Difference <InfoTip text="Projected demand minus budget at the project's end. Positive is over budget (red), negative is under (green)." /></>, num: true, thClass: 'fc-col', tdClass: 'fc-col', sortValue: (p) => demandEnd(p, fcMethod) - p.budget, render: (p) => { const d = Math.round(demandEnd(p, fcMethod) - p.budget); const pc = Math.round((d / p.budget) * 100); if (d > 0) return <span className="tag warn">+{fmt(d)} (+{pc}%)</span>; if (d < 0) return <span className="tag ok">{fmt(d)} ({pc}%)</span>; return <span className="hint">0</span> } },
