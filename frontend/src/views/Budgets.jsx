@@ -1,16 +1,24 @@
 import { useState } from 'react'
 import {
-  teams, people, projects, pctOfOrg, orgPool,
+  teams, people, projects, pctOfOrg, orgPool, projectOwner,
 } from '../data/mockData.js'
 
 const fmt = (n) => n.toLocaleString('en-GB')
 const budgetCell = (v) => `${fmt(v)} (${pctOfOrg(v)}%)`
 const FUND_ORDER = { team: 0, org: 1, person: 2 }
 
-function PoolTag({ funding }) {
-  if (funding === 'org') return <span className="tag org" style={{ marginLeft: 6 }}>org pool</span>
-  if (funding === 'person') return <span className="tag" style={{ marginLeft: 6 }}>personal</span>
-  return null
+// The name to show for a project: personal projects carry their owner in the
+// [personal] tag, so the cell just needs the plain word.
+function ProjectName({ p }) {
+  const personal = p.funding === 'person'
+  return (
+    <>
+      {personal ? projectOwner(p) : p.name}
+      {personal && <span className="tag" style={{ marginLeft: 6 }}>personal</span>}
+      {p.funding === 'org' && <span className="tag org" style={{ marginLeft: 6 }}>org pool</span>}
+      {!p.teamId && p.funding !== 'person' && <span className="tag amber" style={{ marginLeft: 6 }}>no team</span>}
+    </>
+  )
 }
 
 export default function Budgets() {
@@ -47,11 +55,13 @@ export default function Budgets() {
       <div className="view-head">
         <h2 className="view-title">Budgets</h2>
         <p className="view-intro">
-          GPU budgets by team and project. Projects sit under their team, and the pool
-          that funds each one shows as a tag (team by default, or org pool or personal).
-          Org-level projects with no owning team are grouped under Organisation. Budgets
-          show in GPU-hours and as a share of the org pool ({fmt(orgPool)}). Who works on
-          each project is in the People tab.
+          GPU budgets by team and project. Projects sit under their team; a tag marks
+          any that draw on the org pool by design (<span className="tag org">org pool</span>)
+          or have no owning team yet (<span className="tag amber">no team</span>), and
+          personal work carries a <span className="tag">personal</span> tag. Projects with
+          no team are collected under “No owning team”. Budgets are GPU-hours, with each
+          shown as a share of the org pool ({fmt(orgPool)} GPU-h). Who works on each
+          project is in the People tab.
         </p>
       </div>
 
@@ -75,8 +85,8 @@ export default function Budgets() {
         <div className="acc">
           <button className="acc-head" onClick={() => toggle('noteam')}>
             <span className="acc-chev">{isOpen('noteam') ? '▾' : '▸'}</span>
-            <span className="acc-title">Organisation</span>
-            <span className="acc-meta"><span>{teamlessVisible.length} projects</span></span>
+            <span className="acc-title">No owning team</span>
+            <span className="acc-meta"><span>org-level &amp; unassigned</span><span>{teamlessVisible.length} projects</span></span>
           </button>
           {isOpen('noteam') && (
             <div className="acc-body">
@@ -99,7 +109,7 @@ function TeamGroup({ g, open, onToggle }) {
         <span className="acc-chev">{open ? '▾' : '▸'}</span>
         <span className="acc-title">{team.name}</span>
         <span className="acc-meta">
-          <span>{budgetCell(team.budget)}</span>
+          <span>{budgetCell(team.budget)} <span className="th-unit">GPU-h (% of pool)</span></span>
           <span>{members.length} people</span>
           <span>{rows.length} projects</span>
         </span>
@@ -119,14 +129,14 @@ function ProjectTable({ rows }) {
     <table className="data" style={{ tableLayout: 'fixed' }}>
       <colgroup>
         <col />
-        <col style={{ width: '150px' }} />
+        <col style={{ width: '170px' }} />
         <col style={{ width: '90px' }} />
         <col style={{ width: '210px' }} />
       </colgroup>
       <thead>
         <tr>
-          <th>Project</th>
-          <th className="num">Budget</th>
+          <th>Name</th>
+          <th className="num">Budget<br /><span className="th-unit">GPU-h (% of pool)</span></th>
           <th className="num">Priority</th>
           <th>Dates</th>
         </tr>
@@ -134,7 +144,7 @@ function ProjectTable({ rows }) {
       <tbody>
         {rows.map((p) => (
           <tr key={p.id}>
-            <td>{p.name}<PoolTag funding={p.funding} /></td>
+            <td><ProjectName p={p} /></td>
             <td className="num">{budgetCell(p.budget)}</td>
             <td className="num">{p.priority}</td>
             <td>{p.funding === 'person' ? <span className="hint">n/a</span> : `${p.start} to ${p.end}`}</td>

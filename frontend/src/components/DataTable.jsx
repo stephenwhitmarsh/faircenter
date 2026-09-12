@@ -40,7 +40,7 @@ export default function DataTable({ columns, rows, initialSort }) {
             return (
               <th
                 key={c.key}
-                className={(c.num ? 'num ' : '') + (c.sortable === false ? '' : 'sortable')}
+                className={[c.num ? 'num' : '', c.sortable === false ? '' : 'sortable', c.thClass || ''].filter(Boolean).join(' ')}
                 onClick={() => clickHeader(c)}
                 aria-sort={active ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'}
               >
@@ -54,7 +54,7 @@ export default function DataTable({ columns, rows, initialSort }) {
         {sorted.map((r, i) => (
           <tr key={r.id ?? i}>
             {columns.map((c) => (
-              <td key={c.key} className={c.num ? 'num' : ''}>
+              <td key={c.key} className={[c.num ? 'num' : '', c.tdClass || ''].filter(Boolean).join(' ')}>
                 {c.render ? c.render(r) : r[c.key]}
               </td>
             ))}

@@ -35,13 +35,13 @@ const TEAM_HUES = ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#008300', '#e349
 const TEAM_COLOUR = Object.fromEntries(teams.map((t, i) => [t.name, TEAM_HUES[i % TEAM_HUES.length]]))
 function bucketColour(name) {
   if (name === 'Personal') return '#9085e9'
-  if (name === 'Organisation') return '#898781'
+  if (name === 'No team') return '#898781'
   return TEAM_COLOUR[name] ?? '#898781'
 }
 function projectBucketName(p) {
-  if (p.teamId) return teamById(p.teamId)?.name ?? 'Organisation'
+  if (p.teamId) return teamById(p.teamId)?.name ?? 'No team'
   if (p.funding === 'person') return 'Personal'
-  return 'Organisation'
+  return 'No team'
 }
 
 function selectedProjects(scope) {
@@ -55,7 +55,7 @@ function selectedProjects(scope) {
 
 function unitsForScope(scope, subset) {
   if (scope === 'all') {
-    const order = [...teams.map((t) => t.name), 'Personal', 'Organisation']
+    const order = [...teams.map((t) => t.name), 'Personal', 'No team']
     const byB = {}
     for (const p of projects) { const b = projectBucketName(p); (byB[b] ||= []).push(p) }
     return order.filter((b) => byB[b]).map((b) => ({ key: 'b:' + b, label: b, projects: byB[b], colour: bucketColour(b) }))
@@ -196,6 +196,7 @@ export default function ConsumptionReservations() {
   const [range, setRange] = useState('today')
   const [forecast, setForecast] = useState('14')
   const [yUnit, setYUnit] = useState('gpuh')
+  const [fcMethod, setFcMethod] = useState('recent')
   const [custom, setCustom] = useState({ from: '2026-09-01', to: '2026-09-12' })
 
   const subset = selectedProjects(scope)
@@ -214,8 +215,7 @@ export default function ConsumptionReservations() {
   const committed = projects.reduce((s, p) => s + p.budget, 0)
   const headroom = Math.round(cluster.capacityGpuHours * parameters.headroom.org)
   const stillFree = cluster.capacityGpuHours - committed - headroom
-  const usedShown = rows.filter((r) => !r.forecast)
-    .reduce((s, r) => s + units.reduce((a, u) => a + (r[u.key] || 0), 0), 0)
+  const consumedToDate = projects.reduce((s, p) => s + p.used, 0)
 
   const drilled = scope !== 'all'
 
@@ -281,7 +281,7 @@ export default function ConsumptionReservations() {
       <div className="tiles">
         <Tile label="Cluster capacity" value={fmt(cluster.capacityGpuHours)} note="GPU-hours / period" />
         <Tile label="Committed budgets" value={fmt(committed)} note={pct(committed, cluster.capacityGpuHours)} />
-        <Tile label="Used (shown)" value={fmt(usedShown)} note={rangeNote(range)} />
+        <Tile label="Consumed to date" value={fmt(consumedToDate)} note={`${Math.round((consumedToDate / committed) * 100)}% of committed`} />
         <Tile label="Headroom" value={fmt(headroom)} note={`${Math.round(parameters.headroom.org * 100)}% held back`} />
         <Tile label="Still free" value={fmt(stillFree)} note={pct(stillFree, cluster.capacityGpuHours)} />
       </div>
@@ -333,16 +333,28 @@ export default function ConsumptionReservations() {
       </div>
 
       <div className="card">
-        <div className="card-title">Projects this period</div>
+        <div className="card-title" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+          <span>Projects this period</span>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontWeight: 400, fontSize: 13 }}>
+            <label className="hint" style={{ margin: 0 }}>Forecast model</label>
+            <select value={fcMethod} onChange={(e) => setFcMethod(e.target.value)}>
+              <option value="recent">Recent rate, capped</option>
+              <option value="linear">Linear from start</option>
+              <option value="spline" disabled>Spline / trend (planned)</option>
+              <option value="ml" disabled>Learned model (planned)</option>
+            </select>
+          </span>
+        </div>
         <DataTable
           initialSort={{ key: 'budget', dir: 'desc' }}
           columns={[
-            { key: 'name', label: 'Project' },
+            { key: 'name', label: 'Project', render: (p) => (p.funding === 'person' ? <span className="tag">personal</span> : p.name) },
             { key: 'owner', label: 'Owner', sortValue: (p) => projectOwner(p), render: (p) => projectOwner(p) },
             { key: 'budget', label: 'Budget', num: true, render: (p) => fmt(p.budget) },
             { key: 'used', label: 'Used to date', num: true, render: (p) => fmt(p.used) },
+            { key: 'remaining', label: 'Remaining', num: true, sortValue: (p) => p.budget - p.used, render: (p) => fmt(Math.max(0, p.budget - p.used)) },
             {
-              key: 'progress', label: 'Progress', sortable: false,
+              key: 'progress', label: 'Consumption', sortable: false,
               render: (p) => (
                 <div className="meter" title={`${Math.round((p.used / p.budget) * 100)}% of budget used`}>
                   <span style={{ width: Math.min(100, (p.used / p.budget) * 100) + '%' }} />
@@ -350,32 +362,37 @@ export default function ConsumptionReservations() {
               ),
             },
             {
-              key: 'forecast', label: 'Forecast use', num: true,
-              sortValue: (p) => forecastEnd(p),
-              render: (p) => fmt(forecastEnd(p)),
+              key: 'forecast', label: 'Forecast use', num: true, thClass: 'fc-col fc-first', tdClass: 'fc-col fc-first',
+              sortValue: (p) => forecastEnd(p, fcMethod),
+              render: (p) => fmt(forecastEnd(p, fcMethod)),
             },
             {
-              key: 'exhaust', label: 'Budget runs out', sortValue: (p) => exhaustionDay(p) ?? 999,
+              key: 'exhaust', label: 'Budget runs out', thClass: 'fc-col', tdClass: 'fc-col',
+              sortValue: (p) => exhaustBy(p, fcMethod) ?? 999,
               render: (p) => {
-                const d = exhaustionDay(p)
+                const d = exhaustBy(p, fcMethod)
                 return d ? <span className="tag warn">~{dayLabel(d)}</span> : <span className="hint">within budget</span>
               },
             },
             {
-              key: 'daysleft', label: 'Days left', num: true,
-              sortValue: (p) => { const d = exhaustionDay(p); return d ? d - period.today : 999 },
+              key: 'daysleft', label: 'Days left', num: true, thClass: 'fc-col', tdClass: 'fc-col',
+              sortValue: (p) => { const d = exhaustBy(p, fcMethod); return d ? d - period.today : 999 },
               render: (p) => {
-                const d = exhaustionDay(p)
-                return d ? Math.max(0, d - period.today) : <span className="hint">—</span>
+                const d = exhaustBy(p, fcMethod)
+                if (!d) return <span className="hint">—</span>
+                return <span className="tag warn">{Math.max(0, d - period.today)}</span>
               },
             },
           ]}
           rows={projects}
         />
         <p className="hint">
-          Forecast use is projected at the recent rate but capped at the budget, so it
-          never exceeds it. “Budget runs out” flags projects on track to hit their cap
-          before the period ends.
+          The three shaded columns are forecast to the end of the period ({dayLabel(period.totalDays)}).
+          The model behind them is chosen above: “recent rate” continues each project’s
+          last few days and caps at its budget; “linear from start” extends the average
+          rate so far. Spline and learned models are where trained predictors will plug in.
+          “Budget runs out” and “Days left” turn red for any project on track to hit its
+          cap before the period ends.
         </p>
       </div>
 
@@ -396,9 +413,30 @@ export default function ConsumptionReservations() {
   )
 }
 
-function forecastEnd(p) {
-  const fc = forecastBuckets(p, dailyIncrements(p), period.totalDays - period.today)
+// Forecast total consumption by end of period under the chosen model, never
+// exceeding the budget. 'recent' continues the recent-rate (capped) buckets;
+// 'linear' extends the average rate since the period start.
+function forecastEnd(p, method = 'recent') {
+  const steps = period.totalDays - period.today
+  if (method === 'linear') {
+    const rate = period.today > 0 ? p.used / period.today : 0
+    return Math.min(p.budget, p.used + rate * steps)
+  }
+  const fc = forecastBuckets(p, dailyIncrements(p), steps)
   return p.used + fc.reduce((s, v) => s + v, 0)
+}
+
+// Day the project exhausts its budget under the chosen model, or null if it
+// stays within budget through the period.
+function exhaustBy(p, method = 'recent') {
+  if (method === 'linear') return exhaustionDay(p)
+  const fc = forecastBuckets(p, dailyIncrements(p), period.totalDays - period.today)
+  let remaining = p.budget - p.used
+  for (let i = 0; i < fc.length; i++) {
+    remaining -= fc[i]
+    if (remaining <= 0) return period.today + i + 1
+  }
+  return null
 }
 
 function projName(id) { return projects.find((p) => p.id === id)?.name ?? id }

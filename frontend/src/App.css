@@ -176,6 +176,20 @@ table.data tr:last-child td { border-bottom: none; }
 .tag.warn { color: var(--critical); border-color: color-mix(in srgb, var(--critical) 40%, transparent); }
 .tag.ok { color: var(--good); border-color: color-mix(in srgb, var(--good) 40%, transparent); }
 .tag.org { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
+.tag.amber { color: var(--warning); border-color: color-mix(in srgb, var(--warning) 45%, transparent); }
+
+/* small unit caption under a column header or beside a summary figure */
+.th-unit {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 400;
+  color: var(--muted);
+  letter-spacing: 0.01em;
+}
+
+/* forecast column group: set apart from actuals */
+.data th.fc-col, .data td.fc-col { background: color-mix(in srgb, var(--accent) 6%, transparent); }
+.data th.fc-first, .data td.fc-first { border-left: 2px solid color-mix(in srgb, var(--accent) 40%, transparent); }
 
 /* placeholder note for tabs not yet built out */
 .stub {

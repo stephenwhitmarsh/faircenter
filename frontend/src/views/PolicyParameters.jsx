@@ -3,9 +3,9 @@ import Toggle from '../components/Toggle.jsx'
 import { parameters } from '../data/mockData.js'
 
 const LANE_EXAMPLE = {
-  bulk: 'sbatch --qos=bulk train.sh',
-  standard: 'sbatch --qos=standard train.sh',
-  fast: 'sbatch --qos=fast train.sh',
+  bulk: 'sbatch --qos=bulk ...',
+  standard: 'sbatch --qos=standard ...',
+  fast: 'sbatch --qos=fast ...',
 }
 
 export default function PolicyParameters() {
@@ -23,9 +23,6 @@ export default function PolicyParameters() {
     { name: 'Account vs lane weight', value: weights.accountVsLane.toFixed(2), note: 'how far a lane can lift a job above account standing' },
     { name: 'Team vs project weight', value: weights.teamVsProject.toFixed(2), note: 'blend of team standing and project standing' },
     { name: 'Over-subscription factor', value: oversubscriptionFactor.toFixed(2) + '×', note: 'how far granted demand may exceed capacity' },
-    { name: 'Headroom, organisation', value: pct(headroom.org), note: 'share of capacity kept free above the teams' },
-    { name: 'Headroom, team', value: pct(headroom.team), note: 'kept free within each team budget' },
-    { name: 'Headroom, project', value: pct(headroom.project), note: 'kept free within each project' },
   ]
 
   return (
@@ -79,11 +76,11 @@ export default function PolicyParameters() {
           offered at all is the “Priced urgency” switch above.
         </p>
         <p className="note">
-          Headroom and the over-subscription factor are the admission controls:
-          together they set how much of capacity may be committed. Headroom per team
-          and per project is not approved case by case, it is a single percentage
-          applied automatically at each level when a budget is granted, so an approved
-          budget is already net of the headroom held back.
+          The over-subscription factor is an admission control: it sets how far granted
+          demand may exceed raw capacity. Headroom, the other admission control, is the
+          share of capacity held free above the teams; because it is read against the
+          live consumption picture it is set on the Consumption &amp; reservations tab
+          rather than here.
         </p>
       </div>
 
@@ -100,7 +97,7 @@ export default function PolicyParameters() {
           <Kpi label="Budget spent at mid-period" value="52%" note="close to on-pace" />
           <Kpi label="Change requests" value="14" note="4 extensions, 10 budget/priority" />
           <Kpi label="Unused headroom" value="6%" note="of capacity, reclaimable" />
-          <Kpi label="Use vs priority spread" value="0.83" note="rank correlation" />
+          <Kpi label="Priority–usage alignment" value="0.83" note="rank corr: do higher-priority projects actually get the hours" />
         </div>
       </div>
     </section>
