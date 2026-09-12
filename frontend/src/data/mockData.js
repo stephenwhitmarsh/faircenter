@@ -46,19 +46,27 @@ export const teams = [
 // SLURM account context and for tidy single-team display.
 // projectIds: which projects a person is allocated to (from Notion). This is the
 // staffing link, separate from team membership.
+// role: 'lead' marks a team lead (of their primary team); 'ops' marks
+// operations. Everyone else is an ordinary member (implicitly a viewer).
+// In production this comes from the identity provider, not the app.
 export const people = [
-  { id: 'p-ada', name: 'Ada Lovelace', teamIds: ['t-pre'], budget: 150, projectIds: ['prj-base', 'prj-sched'] },
+  { id: 'p-ada', name: 'Ada Lovelace', teamIds: ['t-pre'], budget: 150, projectIds: ['prj-base', 'prj-sched'], role: 'lead' },
   { id: 'p-alan', name: 'Alan Turing', teamIds: ['t-pre'], budget: 150, projectIds: ['prj-base', 'prj-datapipe'] },
   { id: 'p-grace', name: 'Grace Hopper', teamIds: ['t-pre'], budget: 150, projectIds: ['prj-datapipe'] },
   { id: 'p-ravi', name: 'Ravi Patel', teamIds: ['t-ft'], budget: 150, projectIds: ['prj-instruct', 'prj-probe'] },
-  { id: 'p-lena', name: 'Lena Hart', teamIds: ['t-ft'], budget: 150, projectIds: ['prj-instruct', 'prj-rlhf'] },
+  { id: 'p-lena', name: 'Lena Hart', teamIds: ['t-ft'], budget: 150, projectIds: ['prj-instruct', 'prj-rlhf'], role: 'lead' },
   { id: 'p-omar', name: 'Omar Diallo', teamIds: ['t-ft'], budget: 150, projectIds: ['prj-rlhf'] },
-  { id: 'p-mei', name: 'Mei Chen', teamIds: ['t-eval'], budget: 150, projectIds: ['prj-bench'] },
+  { id: 'p-mei', name: 'Mei Chen', teamIds: ['t-eval'], budget: 150, projectIds: ['prj-bench'], role: 'lead' },
   { id: 'p-jonas', name: 'Jonas Weber', teamIds: ['t-eval'], budget: 150, projectIds: ['prj-redteam', 'prj-safety'] },
   { id: 'p-sara', name: 'Sara Nkosi', teamIds: ['t-eval'], budget: 150, projectIds: ['prj-bench', 'prj-safety'] },
   // multi-domain expert supporting two teams
   { id: 'p-nadia', name: 'Nadia Rahman', teamIds: ['t-pre', 't-eval'], budget: 150, projectIds: ['prj-base', 'prj-bench'] },
+  // operations: no team, sets policy and capacity, approves and writes to SLURM
+  { id: 'p-priya', name: 'Priya Nair', teamIds: [], budget: 0, projectIds: [], role: 'ops' },
 ]
+
+export const leads = people.filter((p) => p.role === 'lead')
+export const opsPeople = people.filter((p) => p.role === 'ops')
 
 // Lanes are the priced urgency tiers, chosen per job at submission (not a
 // project attribute). factor scales how fast budget is drawn; priority is the
@@ -140,6 +148,22 @@ export function ownerBucket(prj) {
 }
 
 export function pctOfOrg(v) { return Math.round((v / orgPool) * 100) }
+
+// Ordinal rank of a project within its owning pool (its team, or the org pool
+// for teamless projects). Between-pool arbitration is by budget share via SLURM
+// fair-tree; this rank is only the owner's ordering inside the pool, so its
+// magnitude carries no meaning, only its order. Personal projects have no rank.
+export function projectRank(project) {
+  if (project.funding === 'person') return null
+  const key = project.teamId ?? null
+  const pool = projects.filter((p) => p.funding !== 'person' && (p.teamId ?? null) === key)
+  const sorted = [...pool].sort((a, b) => b.priority - a.priority)
+  return { rank: sorted.findIndex((p) => p.id === project.id) + 1, of: pool.length }
+}
+export function ordinal(n) {
+  const s = ['th', 'st', 'nd', 'rd'], v = n % 100
+  return n + (s[(v - 20) % 10] || s[v] || s[0])
+}
 
 // deterministic pseudo-random so the synthetic series is stable across renders
 function hashSeed(str) {

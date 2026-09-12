@@ -9,6 +9,7 @@ import {
   projectOwner, ownerBucket, teamById, dailyIncrements, hourlyActualToday, forecastBuckets,
   exhaustionDay, dayLabel, hourLabel,
 } from '../data/mockData.js'
+import { useSession } from '../session.jsx'
 
 const fmt = (n) => Math.round(n).toLocaleString('en-GB')
 
@@ -198,6 +199,9 @@ export default function ConsumptionReservations() {
   const [yUnit, setYUnit] = useState('gpuh')
   const [fcMethod, setFcMethod] = useState('recent')
   const [custom, setCustom] = useState({ from: '2026-09-01', to: '2026-09-12' })
+  const { can } = useSession()
+  const [headroomPct, setHeadroomPct] = useState(Math.round(parameters.headroom.org * 100))
+  const [hrApplied, setHrApplied] = useState(false)
 
   const subset = selectedProjects(scope)
   const units = useMemo(() => unitsForScope(scope, subset), [scope]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -213,9 +217,11 @@ export default function ConsumptionReservations() {
     : cluster.capacityGpuHours / period.totalDays
 
   const committed = projects.reduce((s, p) => s + p.budget, 0)
-  const headroom = Math.round(cluster.capacityGpuHours * parameters.headroom.org)
+  const headroom = Math.round(cluster.capacityGpuHours * (headroomPct / 100))
   const stillFree = cluster.capacityGpuHours - committed - headroom
   const consumedToDate = projects.reduce((s, p) => s + p.used, 0)
+  const headroomDirty = headroomPct !== Math.round(parameters.headroom.org * 100)
+  const applyHeadroom = () => { parameters.headroom.org = headroomPct / 100; setHrApplied(true) }
 
   const drilled = scope !== 'all'
 
@@ -282,9 +288,25 @@ export default function ConsumptionReservations() {
         <Tile label="Cluster capacity" value={fmt(cluster.capacityGpuHours)} note="GPU-hours / period" />
         <Tile label="Committed budgets" value={fmt(committed)} note={pct(committed, cluster.capacityGpuHours)} />
         <Tile label="Consumed to date" value={fmt(consumedToDate)} note={`${Math.round((consumedToDate / committed) * 100)}% of committed`} />
-        <Tile label="Headroom" value={fmt(headroom)} note={`${Math.round(parameters.headroom.org * 100)}% held back`} />
+        <Tile label="Headroom" value={fmt(headroom)} note={`${headroomPct}% held back`} />
         <Tile label="Still free" value={fmt(stillFree)} note={pct(stillFree, cluster.capacityGpuHours)} />
       </div>
+
+      {can('editHeadroom') && (
+        <div className="editbar">
+          <span className="perm-note perm-on">Operations</span>
+          <label>Headroom held back</label>
+          <span className="numin">
+            <input type="number" min="0" max="50" step="1" value={headroomPct}
+              onChange={(e) => { setHeadroomPct(Number(e.target.value)); setHrApplied(false) }} style={{ width: 64 }} />
+            <span className="numin-suffix">% of capacity</span>
+          </span>
+          <button className="btn primary" disabled={!headroomDirty} onClick={applyHeadroom}>Apply to SLURM</button>
+          <span className="hint">
+            {headroomDirty ? 'Staged.' : hrApplied ? 'Applied · would set the org reservation.' : 'Held free above the teams as an admission control.'}
+          </span>
+        </div>
+      )}
 
       <div className="card">
         <div className="card-title">

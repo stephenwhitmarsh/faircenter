@@ -5,6 +5,12 @@ import {
 
 const teamNames = (p) => teamsForPerson(p).map((t) => t.name).join(', ')
 
+function RoleBadge({ person }) {
+  if (person.role === 'lead') return <span className="tag org" style={{ marginLeft: 6 }}>team lead</span>
+  if (person.role === 'ops') return <span className="tag amber" style={{ marginLeft: 6 }}>operations</span>
+  return null
+}
+
 export default function People() {
   const [q, setQ] = useState('')
   const [by, setBy] = useState('team')
@@ -68,7 +74,7 @@ function ByPerson({ query, match, isOpen, toggle }) {
       {visible.map((p) => {
         const list = projectsForPerson(p)
         return (
-          <Acc key={p.id} id={p.id} title={p.name} meta={`${teamNames(p)} · ${list.length} projects`} open={isOpen(p.id)} onToggle={() => toggle(p.id)}>
+          <Acc key={p.id} id={p.id} title={<>{p.name}<RoleBadge person={p} /></>} meta={`${teamNames(p) || 'no team'} · ${list.length} projects`} open={isOpen(p.id)} onToggle={() => toggle(p.id)}>
             {list.length === 0 ? <p className="hint">No projects.</p> : (
               <table className="data" style={{ tableLayout: 'fixed' }}>
                 <colgroup><col style={{ width: '55%' }} /><col /></colgroup>
@@ -106,7 +112,7 @@ function ByTeam({ query, match, isOpen, toggle }) {
             <tbody>
               {members.map((m) => (
                 <tr key={m.id}>
-                  <td>{m.name}</td>
+                  <td>{m.name}<RoleBadge person={m} /></td>
                   <td>{projectList(projectsForPerson(m))}</td>
                   <td className="num">{projectsForPerson(m).length}</td>
                 </tr>
@@ -136,7 +142,7 @@ function ByProject({ query, match, isOpen, toggle }) {
               <tbody>
                 {assigned.map((m) => (
                   <tr key={m.id}>
-                    <td>{m.name}</td>
+                    <td>{m.name}<RoleBadge person={m} /></td>
                     <td>{teamNames(m)}</td>
                   </tr>
                 ))}

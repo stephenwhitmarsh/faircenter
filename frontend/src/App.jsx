@@ -7,7 +7,8 @@ import ConsumptionReservations from './views/ConsumptionReservations.jsx'
 import PolicyParameters from './views/PolicyParameters.jsx'
 import Analytics from './views/Analytics.jsx'
 import Requests from './views/Requests.jsx'
-import { period } from './data/mockData.js'
+import { period, leads, opsPeople } from './data/mockData.js'
+import { SessionProvider, useSession, actorFor } from './session.jsx'
 
 const TABS = [
   { id: 'people', label: 'People', component: People },
@@ -18,7 +19,34 @@ const TABS = [
   { id: 'requests', label: 'Requests for changes', component: Requests },
 ]
 
-export default function App() {
+function RoleSwitcher() {
+  const { session, setSession } = useSession()
+  const value = session.role === 'viewer' ? 'viewer' : session.personId
+  const onChange = (e) => {
+    const v = e.target.value
+    if (v === 'viewer') return setSession(actorFor('viewer'))
+    const lead = leads.find((p) => p.id === v)
+    if (lead) return setSession(actorFor('lead', lead))
+    const op = opsPeople.find((p) => p.id === v)
+    if (op) return setSession(actorFor('ops', op))
+  }
+  return (
+    <label className="role-switch">
+      <span>Viewing as</span>
+      <select value={value} onChange={onChange}>
+        <option value="viewer">Viewer</option>
+        <optgroup label="Team lead">
+          {leads.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+        </optgroup>
+        <optgroup label="Operations">
+          {opsPeople.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+        </optgroup>
+      </select>
+    </label>
+  )
+}
+
+function AppInner() {
   const [active, setActive] = useState('consumption')
   const ActiveView = TABS.find((t) => t.id === active).component
 
@@ -29,7 +57,10 @@ export default function App() {
           <span className="brand-name">faircenter</span>
           <span className="brand-sub">GPU allocation</span>
         </div>
-        <div className="period">{period.name}</div>
+        <div className="header-right">
+          <RoleSwitcher />
+          <span className="period">{period.name}</span>
+        </div>
       </header>
 
       <nav className="tabbar" role="tablist">
@@ -54,5 +85,13 @@ export default function App() {
         Proof of concept, synthetic data. The figures here are illustrative.
       </footer>
     </div>
+  )
+}
+
+export default function App() {
+  return (
+    <SessionProvider>
+      <AppInner />
+    </SessionProvider>
   )
 }

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import {
-  teams, people, projects, pctOfOrg, orgPool, projectOwner,
+  teams, people, projects, pctOfOrg, orgPool, projectOwner, projectRank, ordinal,
 } from '../data/mockData.js'
 
 const fmt = (n) => n.toLocaleString('en-GB')
@@ -60,8 +60,10 @@ export default function Budgets() {
           or have no owning team yet (<span className="tag amber">no team</span>), and
           personal work carries a <span className="tag">personal</span> tag. Projects with
           no team are collected under “No owning team”. Budgets are GPU-hours, with each
-          shown as a share of the org pool ({fmt(orgPool)} GPU-h). Who works on each
-          project is in the People tab.
+          shown as a share of the org pool ({fmt(orgPool)} GPU-h). Rank is the owner’s
+          ordering within the pool, a tie-break only; arbitration between pools is by
+          budget share through SLURM fair-tree, so only the order matters, not the number.
+          Who works on each project is in the People tab.
         </p>
       </div>
 
@@ -137,19 +139,22 @@ function ProjectTable({ rows }) {
         <tr>
           <th>Name</th>
           <th className="num">Budget<br /><span className="th-unit">GPU-h (% of pool)</span></th>
-          <th className="num">Priority</th>
+          <th className="num">Rank<br /><span className="th-unit">in pool</span></th>
           <th>Dates</th>
         </tr>
       </thead>
       <tbody>
-        {rows.map((p) => (
-          <tr key={p.id}>
-            <td><ProjectName p={p} /></td>
-            <td className="num">{budgetCell(p.budget)}</td>
-            <td className="num">{p.priority}</td>
-            <td>{p.funding === 'person' ? <span className="hint">n/a</span> : `${p.start} to ${p.end}`}</td>
-          </tr>
-        ))}
+        {rows.map((p) => {
+          const r = projectRank(p)
+          return (
+            <tr key={p.id}>
+              <td><ProjectName p={p} /></td>
+              <td className="num">{budgetCell(p.budget)}</td>
+              <td className="num">{r ? <>{ordinal(r.rank)} <span className="th-unit">of {r.of}</span></> : <span className="hint">n/a</span>}</td>
+              <td>{p.funding === 'person' ? <span className="hint">n/a</span> : `${p.start} to ${p.end}`}</td>
+            </tr>
+          )
+        })}
       </tbody>
     </table>
   )
