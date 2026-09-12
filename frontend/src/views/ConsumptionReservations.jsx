@@ -50,15 +50,23 @@ function projListForScope(scope) {
   return projects
 }
 
-function windowFor(range, custom) {
+// Range sets how much history to show; the forecast extends forward by a
+// fraction of that same history span, so it scales with the chosen period.
+function windowFor(range, custom, fcPct) {
   const now = period.nowMs
-  if (range === 'today') return { t0: floorDay(now), fEnd: floorDay(now) + DAY }
-  if (range === '7d') return { t0: now - 7 * DAY, fEnd: now + 7 * DAY }
-  if (range === '30d') return { t0: now - 30 * DAY, fEnd: now + 30 * DAY }
-  if (range === '90d') return { t0: now - 90 * DAY, fEnd: now + 45 * DAY }
-  if (range === 'total') return { t0: period.startMs, fEnd: period.endMs }
-  const t0 = Date.parse(custom.from), fEnd = Date.parse(custom.to)
-  return { t0: isNaN(t0) ? period.startMs : t0, fEnd: isNaN(fEnd) ? now : fEnd }
+  if (range === 'custom') {
+    const t0 = Date.parse(custom.from), t1 = Date.parse(custom.to)
+    return { t0: isNaN(t0) ? period.startMs : t0, fEnd: isNaN(t1) ? now : t1 }
+  }
+  let t0
+  if (range === 'today') t0 = floorDay(now)
+  else if (range === '7d') t0 = now - 7 * DAY
+  else if (range === '30d') t0 = now - 30 * DAY
+  else if (range === '90d') t0 = now - 90 * DAY
+  else t0 = period.startMs // total
+  const hist = now - t0
+  const fEnd = Math.min(period.endMs, now + fcPct * hist)
+  return { t0, fEnd }
 }
 
 // ordered bucket list and their colours for the current scope + rows
@@ -133,7 +141,7 @@ function ChartTooltip({ active, payload, label, colourByKey, yUnit, capGpus }) {
 export default function ConsumptionReservations() {
   const [scope, setScope] = useState('all')
   const [range, setRange] = useState('30d')
-  const [forecastOn, setForecastOn] = useState(true)
+  const [fcPct, setFcPct] = useState(0.5) // forecast horizon as a fraction of the shown history
   const [fcMethod, setFcMethod] = useState('recent')
   const [yUnit, setYUnit] = useState('gpus')
   const [custom, setCustom] = useState({ from: '2026-08-01', to: '2026-10-15' })
@@ -145,17 +153,18 @@ export default function ConsumptionReservations() {
 
   const subset = projListForScope(scope)
   const keyOf = scope === 'all' ? keyOfAll : (p) => p.name
-  const { t0, fEnd } = windowFor(range, custom)
+  const fcOn = fcPct > 0
+  const { t0, fEnd } = windowFor(range, custom, fcPct)
   const tActualEnd = Math.min(fEnd, period.nowMs)
 
   const chart = useMemo(() => {
     const act = loadSeries(subset, t0, tActualEnd, keyOf)
-    const fc = forecastOn && fEnd > period.nowMs ? forecastSeries(subset, period.nowMs, fEnd, keyOf, fcMethod) : { rows: [], buckets: [] }
+    const fc = fcOn && fEnd > period.nowMs ? forecastSeries(subset, period.nowMs, fEnd, keyOf, fcMethod) : { rows: [], buckets: [] }
     const present = new Set()
     for (const r of [...act.rows, ...fc.rows]) for (const k of Object.keys(r)) if (k !== 't' && k !== 'forecast' && r[k] > 0) present.add(k)
     const units = orderedBuckets(scope, subset, present)
     return { rows: [...act.rows, ...fc.rows], units, mode: act.mode }
-  }, [scope, range, custom, forecastOn, fcMethod]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [scope, range, custom, fcPct, fcMethod]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const colourByKey = Object.fromEntries(chart.units.map((u) => [u.key, u.colour]))
   const capGpus = cluster.gpus
@@ -179,7 +188,7 @@ export default function ConsumptionReservations() {
   const applyAdmission = () => { parameters.headroom.org = headroomPct / 100; parameters.oversubscriptionFactor = oversub; setAdmApplied(true) }
 
   // a dragged selection drives the tables; with none, default to the current moment
-  useEffect(() => { setSel(null) }, [range, scope, custom.from, custom.to, forecastOn])
+  useEffect(() => { setSel(null) }, [range, scope, custom.from, custom.to, fcPct])
   const selLabel = sel ? `${fmtDay(sel.a)} – ${fmtDay(sel.b)}` : `now (${fmtDay(period.nowMs)})`
   const projRows = sel
     ? projects.filter((p) => p.endMs >= sel.a && p.startMs <= sel.b)
@@ -226,12 +235,14 @@ export default function ConsumptionReservations() {
           <span className="hint">to</span>
           <input type="date" value={custom.to} onChange={(e) => setCustom((c) => ({ ...c, to: e.target.value }))} />
         </>)}
-        <label style={{ marginLeft: 8 }}>Forecast</label>
+        <label style={{ marginLeft: 8 }} title="Forecast horizon, as a fraction of the history shown">Forecast</label>
         <div className="seg">
-          <button className={forecastOn ? 'active' : ''} onClick={() => setForecastOn(true)}>On</button>
-          <button className={!forecastOn ? 'active' : ''} onClick={() => setForecastOn(false)}>Off</button>
+          <button className={fcPct === 0 ? 'active' : ''} onClick={() => setFcPct(0)}>Off</button>
+          <button className={fcPct === 0.25 ? 'active' : ''} onClick={() => setFcPct(0.25)}>25%</button>
+          <button className={fcPct === 0.5 ? 'active' : ''} onClick={() => setFcPct(0.5)}>50%</button>
+          <button className={fcPct === 1 ? 'active' : ''} onClick={() => setFcPct(1)}>100%</button>
         </div>
-        <select value={fcMethod} onChange={(e) => setFcMethod(e.target.value)} disabled={!forecastOn} title="Forecast model">
+        <select value={fcMethod} onChange={(e) => setFcMethod(e.target.value)} disabled={!fcOn} title="Forecast model">
           <option value="recent">Recent rate</option>
           <option value="linear">Linear from start</option>
           <option value="spline" disabled>Spline / trend (planned)</option>
@@ -279,7 +290,7 @@ export default function ConsumptionReservations() {
                 tickFormatter={(v) => (yUnit === 'pct' ? Math.round((v / capGpus) * 100) + '%' : fmt(v))}
                 label={{ value: yUnit === 'pct' ? '% capacity' : 'GPUs', angle: -90, position: 'insideLeft', fill: 'var(--muted)', fontSize: 11 }} />
               <Tooltip content={<ChartTooltip colourByKey={colourByKey} yUnit={yUnit} capGpus={capGpus} />} cursor={{ stroke: 'var(--ink-2)', strokeWidth: 1 }} />
-              {forecastOn && fEnd > period.nowMs && (
+              {fcOn && fEnd > period.nowMs && (
                 <ReferenceArea x1={period.nowMs} x2={fEnd} fill="var(--ink-2)" fillOpacity={0.12} />
               )}
               {chart.units.map((u) => (
