@@ -32,7 +32,7 @@ export default function Connectors() {
           <div className="card-title" style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
             <span>{c.name}</span>
             <span className="th-unit">{c.kind} · {c.role}</span>
-            <StatusPill status={c.enabled ? c.status : 'disabled'} />
+            <StatusPill status={c.enabled ? c.status : 'disconnected'} />
             <label style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 400, fontSize: 13 }}>
               <input type="checkbox" checked={c.enabled} disabled={!editable} onChange={() => toggle(ci)} /> enabled
             </label>

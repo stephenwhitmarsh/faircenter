@@ -19,7 +19,7 @@ const SessionContext = createContext(null)
 
 export function SessionProvider({ children }) {
   // default to operations so a first-time POC visitor sees every view and control
-  const [session, setSession] = useState(() => (opsPeople[0] ? actorFor('ops', opsPeople[0]) : ROLES.viewer))
+  const [session, setSession] = useState(() => { const me = personById('p-stephen') || opsPeople[0]; return me ? actorFor('ops', me) : ROLES.viewer })
 
   const can = (action, arg) => {
     const { role, teamId } = session

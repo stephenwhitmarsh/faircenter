@@ -479,7 +479,7 @@ export function activeSwitcherPeople(cands, n = 12) {
 // values here are placeholders for the proof of concept, secrets are never stored in
 // the front end (the real app keeps them server-side). status is illustrative.
 export const connectors = [
-  { id: 'slurm', name: 'SLURM', kind: 'Scheduler', role: 'source & destination', enabled: true, status: 'connected',
+  { id: 'slurm', name: 'SLURM', kind: 'Scheduler', role: 'source & destination', enabled: false, status: 'connected',
     fields: [
       { key: 'restHost', label: 'slurmrestd host', type: 'text', value: 'slurm-ctld.cluster.internal' },
       { key: 'restPort', label: 'Port', type: 'number', value: '6820' },
@@ -488,14 +488,14 @@ export const connectors = [
       { key: 'token', label: 'JWT token', type: 'password', value: '', placeholder: 'set server-side' },
       { key: 'poll', label: 'Poll interval', type: 'number', value: '30', suffix: 's' },
     ] },
-  { id: 'notion', name: 'Notion', kind: 'Project register', role: 'source', enabled: true, status: 'connected',
+  { id: 'notion', name: 'Notion', kind: 'Project register', role: 'source', enabled: false, status: 'connected',
     fields: [
       { key: 'token', label: 'Integration token', type: 'password', value: '', placeholder: 'secret_…' },
       { key: 'projDb', label: 'Projects database ID', type: 'text', value: '', placeholder: '32-char id' },
       { key: 'budgetDb', label: 'Budgets database ID', type: 'text', value: '' },
       { key: 'sync', label: 'Sync', type: 'select', value: 'read-only', options: ['read-only', 'two-way'] },
     ] },
-  { id: 'slack', name: 'Slack', kind: 'Notifications', role: 'destination', enabled: true, status: 'connected',
+  { id: 'slack', name: 'Slack', kind: 'Notifications', role: 'destination', enabled: false, status: 'connected',
     fields: [
       { key: 'workspace', label: 'Workspace', type: 'text', value: 'your-org' },
       { key: 'auth', label: 'Auth', type: 'select', value: 'Bot token', options: ['Bot token', 'Incoming webhook'] },
@@ -504,7 +504,7 @@ export const connectors = [
       { key: 'route', label: 'Route by', type: 'select', value: 'per-team channel', options: ['single channel', 'per-team channel', 'direct message'] },
       { key: 'events', label: 'Notify on', type: 'select', value: 'approvals + alerts', options: ['approvals only', 'approvals + alerts', 'everything'] },
     ] },
-  { id: 'email', name: 'Email (SMTP)', kind: 'Notifications', role: 'destination', enabled: true, status: 'connected',
+  { id: 'email', name: 'Email (SMTP)', kind: 'Notifications', role: 'destination', enabled: false, status: 'connected',
     fields: [
       { key: 'host', label: 'SMTP host', type: 'text', value: 'smtp.your-org.internal' },
       { key: 'port', label: 'Port', type: 'number', value: '587' },
