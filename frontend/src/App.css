@@ -113,6 +113,8 @@
   font-size: 12px;
   border-top: 1px solid var(--border);
 }
+.app-footer a { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
+.app-footer a:hover { color: var(--ink-2); }
 
 /* shared view pieces */
 .view-head { margin-bottom: 18px; }

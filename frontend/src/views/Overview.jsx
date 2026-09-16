@@ -56,7 +56,7 @@ export default function Overview({ onNav }) {
             {items.map((it, i) => (
               <li key={i} className={'attn-row attn-' + it.level} onClick={() => onNav && onNav(it.tab)}>
                 <span className={'attn-dot attn-' + it.level} />
-                <span className="attn-text"><b>{it.text}</b>{it.detail && <span className="hint"> — {it.detail}</span>}</span>
+                <span className="attn-text"><b>{it.text}</b></span>
                 <span className="attn-go">›</span>
               </li>
             ))}

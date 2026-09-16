@@ -32,7 +32,7 @@ function resvGpus(r) { if (r.type !== 'reservation') return 0; if (typeof r.gpus
 // a concurrent-GPUs-vs-capacity strip, so an approver can see whether they fit.
 function RequestsTimeline({ list, selId, onSelect }) {
   const dated = list.filter((r) => r.startMs && r.endMs && r.endMs > r.startMs)
-  if (!dated.length) return <p className="hint">No requests with a start and end date yet. Reservations, new projects and extensions carry a window.</p>
+  if (!dated.length) return <p className="hint">No requests with a start and end date yet.</p>
   const t0 = Math.min(...dated.map((r) => r.startMs))
   const t1 = Math.max(...dated.map((r) => r.endMs))
   const span = (t1 - t0) || 1
@@ -287,7 +287,7 @@ export default function Requests() {
       </div>
 
       <div className="card">
-        <div className="card-title">Requested windows <span className="th-unit">reservations, new projects and extensions</span></div>
+        <div className="card-title">Requested windows</div>
         <RequestsTimeline list={visibleList} selId={selId} onSelect={(id) => setSelId((s) => (s === id ? null : id))} />
       </div>
 
@@ -354,7 +354,6 @@ export default function Requests() {
             })}
           </tbody>
         </table>
-        <p className="hint">Approving is illustrative; a real backend would apply the change and notify the requester. A decision can be changed or retracted here.</p>
       </div>
     </section>
   )

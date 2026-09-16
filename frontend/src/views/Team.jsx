@@ -133,7 +133,7 @@ export default function Team({ onNav }) {
               <span className="numin-suffix">GPU-h</span>
             </span>
             <button className="btn" onClick={() => setPoolDraft(maxPool)}>Take the rest</button>
-            <span className="hint">Teams pool {fmt(teamsPool)} GPU-h · unallocated {fmt(poolUnallocated)} GPU-h. The person vs teams split is set in <button className="linkbtn" onClick={() => onNav && onNav('policy')}>Policy</button>.</span>
+            
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, maxWidth: 420, marginBottom: 4 }}>
             <span className="meter" style={{ flex: 1 }}><span style={{ width: pct(poolClamped, teamsPool) + '%', background: teamHue[team.id] }} /></span>
@@ -159,7 +159,7 @@ export default function Team({ onNav }) {
           {canDist && (
             <div className="controls" style={{ marginTop: 0, marginBottom: 8 }}>
               <button className="btn" onClick={evenSplit}>Even split</button>
-              <span className="hint">Pool {fmt(pool)} GPU-h. Allocations cannot exceed it; fund more through a <button className="linkbtn" onClick={() => onNav && onNav('requests')}>request</button>.</span>
+              
             </div>
           )}
           <div className="tbl-scroll">
@@ -212,7 +212,7 @@ export default function Team({ onNav }) {
               <span className="hint">{distDirty ? 'Staged.' : 'No staged changes.'}</span>
             </div>
           )}
-          {!canDist && <p className="hint" style={{ marginBottom: 0 }}>The team lead distributes the pool across projects.</p>}
+          
         </>)}
       </div>
     </section>

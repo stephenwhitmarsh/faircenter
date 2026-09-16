@@ -50,7 +50,7 @@ export default function Queue() {
       </div>
 
       <div className="card">
-        <div className="card-title">Waiting <span className="th-unit">{shown.length} shown · sorted by scheduling order by default</span></div>
+        <div className="card-title">Waiting <span className="th-unit">{shown.length} shown</span></div>
         <div className="tbl-scroll">
           <DataTable
             initialSort={{ key: 'pos', dir: 'asc' }}
@@ -62,15 +62,14 @@ export default function Queue() {
               { key: 'person', label: 'Person', sortValue: (r) => personById(r.personId)?.name || '', render: (r) => personById(r.personId)?.name || '—' },
               { key: 'gpus', label: 'GPUs', num: true, sortValue: (r) => r.gpus, render: (r) => fmt(r.gpus) },
               { key: 'lane', label: 'Lane', sortValue: (r) => ({ fast: 3, standard: 2, bulk: 1 }[r.lane] || 0), render: (r) => laneTag(r.lane) },
-              { key: 'prio', label: <>Priority <span className="th-unit">in team</span> <InfoTip text="The project's priority tier, used only within its own team as a tie-break. It does not order work between teams." /></>, sortValue: (r) => TIER_RANK[priorityTier(projectById(r.projectId))] || 0, render: (r) => { const p = projectById(r.projectId); return p ? tierTag(p) : null } },
-              { key: 'teamstd', label: <>Team standing <InfoTip text="Ordering between teams in the fair-tree: a higher standing lifts a team's jobs when the cluster is contended, biasing its share of GPU-time upward over the period." /></>, sortValue: (r) => { const p = projectById(r.projectId); const t = p && p.teamId ? teamById(p.teamId) : null; return teamStandingOn && t ? t.standing : -1 }, render: (r) => { if (!teamStandingOn) return <span className="hint">n/a</span>; const p = projectById(r.projectId); const t = p && p.teamId ? teamById(p.teamId) : null; return t ? <span className="tag">{t.standing}</span> : <span className="hint">n/a</span> } },
+              { key: 'prio', label: <>Priority <span className="th-unit">in team</span> <InfoTip text="The project's priority tier, a tie-break within its own team." /></>, sortValue: (r) => TIER_RANK[priorityTier(projectById(r.projectId))] || 0, render: (r) => { const p = projectById(r.projectId); return p ? tierTag(p) : null } },
+              { key: 'teamstd', label: <>Team standing <InfoTip text="A team's standing in the queue: higher standing lifts its jobs when the cluster is busy." /></>, sortValue: (r) => { const p = projectById(r.projectId); const t = p && p.teamId ? teamById(p.teamId) : null; return teamStandingOn && t ? t.standing : -1 }, render: (r) => { if (!teamStandingOn) return <span className="hint">n/a</span>; const p = projectById(r.projectId); const t = p && p.teamId ? teamById(p.teamId) : null; return t ? <span className="tag">{t.standing}</span> : <span className="hint">n/a</span> } },
               { key: 'waited', label: 'Waited', num: true, sortValue: (r) => r.waited, render: (r) => waited(r.waited) },
               { key: 'eta', label: 'Est. start', num: true, sortValue: (r) => (r.eta == null ? Infinity : r.eta), render: (r) => <span title={r.eta ? fmtDateTime(r.eta) : ''} className={r.eta == null ? 'hint' : ''}>{etaLabel(r.eta)}</span> },
             ]}
             rows={shown}
           />
         </div>
-        <p className="hint">The default order is the order the scheduler will start jobs: standing first (lane and project priority), then age. <b>Est. start</b> projects when each job will run, as running jobs finish and GPUs free up. Click any column to sort by it. A faster lane or a higher project priority moves work up; a large budget does not, it only lets a project run more over the period.</p>
       </div>
 
       {showRunning && (

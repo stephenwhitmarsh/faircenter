@@ -375,7 +375,7 @@ export default function ConsumptionReservations() {
         <div className="card">
           <div className="card-title">
             Capacity schedule <span className="rolechip ops">ops</span>
-            <InfoTip text="Total GPUs in service over time. Pods and expansions change the count on a set date; the dashed capacity line on the chart and the tiles read from this schedule, so a planned expansion shows against load and reservations." />
+            <InfoTip text="GPUs in service over time. The count steps up on the dates pods or expansions come online." />
           </div>
           <div className="editbar" style={{ border: 'none', padding: 0, marginBottom: 4 }}>
             <label>Base (from {fmtDay(period.startMs)})</label>
@@ -399,7 +399,7 @@ export default function ConsumptionReservations() {
           <div className="apply-bar" style={{ marginTop: 6 }}>
             <button className="btn" onClick={addCapAdj}>Add change</button>
             <button className="btn primary" disabled={!capDirty} onClick={applyCapacity}>Apply schedule</button>
-            <span className="hint">{capDirty ? 'Staged — not yet applied.' : capApplied ? 'Applied.' : 'Changes flow to the capacity line and tiles.'}</span>
+            <span className="hint">{capDirty ? 'Staged — not yet applied.' : capApplied ? 'Applied.' : ''}</span>
           </div>
         </div>
       )}
@@ -479,7 +479,7 @@ export default function ConsumptionReservations() {
 
       <div className="card">
         <div className="card-title" style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
-          <span>Projects — {selLabel} <span className="th-unit">{projRows.length} team projects · personal work below</span><InfoTip text="Drag over the chart to pick a time window; with none, this shows projects active now. With a window selected, Budget, Used and Left are for that window; otherwise they are each project’s total. Select a row to scope the chart to that project. Budget status flags a project already over its budget; projected over-runs to each project’s end are in Analytics. Personal work is individual, best-effort work from the person pool; the group meter is total personal use against the total personal budget." /></span>
+          <span>Projects — {selLabel} <span className="th-unit">{projRows.length} team projects</span><InfoTip text="Projects active in the selected window, or active now if none is selected. Drag on the chart to set the window; select a row to scope the chart to that project." /></span>
           <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
             <div className="seg">
               <button className={projView === 'grouped' ? 'active' : ''} onClick={() => setProjView('grouped')}>By team</button>
@@ -574,7 +574,7 @@ export default function ConsumptionReservations() {
       </div>
 
       <div className="card">
-        <div className="card-title">Reservations — {resvLabel} <span className="th-unit">{resvRows.length} shown</span><InfoTip text="Reservations overlapping the window shown above (pan or resize the strip to change it). Operations, the holding team’s lead, or the project lead can Cancel one; the GPUs it held return to the pool for scheduling." /></div>
+        <div className="card-title">Reservations — {resvLabel} <span className="th-unit">{resvRows.length} shown</span><InfoTip text="Reservations overlapping the window shown above. Cancelling one returns its GPUs to the pool." /></div>
         <DataTable
           initialSort={{ key: 'start', dir: 'asc' }}
           columns={[

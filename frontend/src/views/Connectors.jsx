@@ -37,7 +37,6 @@ export default function Connectors() {
               <input type="checkbox" checked={c.enabled} disabled={!editable} onChange={() => toggle(ci)} /> enabled
             </label>
           </div>
-          <p className="hint" style={{ marginTop: 0 }}>{c.detail}</p>
           <div className="conn-grid">
             {c.fields.map((f, fi) => (
               <label className="conn-field" key={f.key}>

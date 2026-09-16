@@ -99,11 +99,9 @@ function AppInner() {
       <header className="app-header">
         <div className="brand">
           <span className="brand-name">faircenter</span>
-          <span className="brand-sub">GPU allocation</span>
         </div>
         <div className="header-right">
           <RoleSwitcher />
-          <span className="period">{period.name}</span>
         </div>
       </header>
 
@@ -126,7 +124,7 @@ function AppInner() {
       </main>
 
       <footer className="app-footer">
-        Proof of concept, synthetic data. The figures here are illustrative.
+        © Stephen Whitmarsh 2026 · <a href="https://github.com/stephenwhitmarsh/faircenter/blob/main/LICENSE" target="_blank" rel="noopener noreferrer">Licence</a>
       </footer>
     </div>
   )

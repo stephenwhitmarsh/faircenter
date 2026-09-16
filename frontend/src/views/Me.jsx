@@ -61,7 +61,7 @@ export default function Me() {
       if (saved > 30) return `Your fast-lane jobs wait about ${medLabel(mine.fast)}, against ${medLabel(mine.standard)} on standard, so the fast lane is buying you time.`
       return `Your fast and standard jobs wait about the same right now, so the fast lane is not buying much; standard keeps more budget.`
     }
-    return 'Not enough recent jobs to compare your lanes yet.'
+    return ''
   })()
 
   return (
@@ -150,7 +150,7 @@ export default function Me() {
               </tbody>
             </table>
           </div>
-          <p className="hint">{laneAdvice}</p>
+          {laneAdvice && <p className="hint">{laneAdvice}</p>}
         </>)}
       </div>
     </section>

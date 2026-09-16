@@ -210,14 +210,6 @@ export default function Analytics({ onNav }) {
           <span className="lg-item"><i className="swatch" style={{ background: '#1baf7a' }} />Committed entitlement</span>
           <span className="lg-item"><i className="swatch" style={{ background: '#eb6834' }} />Realised demand{showForecast ? ' (solid actual, dashed forecast, band = low–high)' : ' (actual)'}</span>
         </div></div>
-        <p className="hint">
-          {!showForecast
-            ? 'Forecast hidden — showing actuals only. '
-            : st.crossThresh
-              ? `At ${METHODS.find((m) => m.k === method)?.label.toLowerCase()} growth, realised demand reaches ${st.thresholdPct}% of capacity around ${st.crossThresh}${st.crossThreshHigh && st.crossThreshHigh !== st.crossThresh ? ` (as early as ${st.crossThreshHigh} on the high side)` : ''}${st.crossFull ? `, and full capacity around ${st.crossFull}` : ''}. `
-              : `Forecast demand stays below ${st.thresholdPct}% of capacity within the ${horizon > 0 ? horizon + '-month' : 'full'} horizon. `}
-          Committed entitlement is what active projects could draw if they spent their budgets evenly; realised demand is what jobs actually use.
-        </p>
       </div>
 
       {/* ---- indicator explorer: KPI selection lives with its own graph ---- */}
@@ -226,9 +218,6 @@ export default function Analytics({ onNav }) {
           {multi ? 'Indicators over time' : `${kpi.label} over time`}
           {multi && <span className="th-unit" style={{ marginLeft: 8 }}>{multiUnit != null ? `${multiUnit || 'count'} · hover for values` : 'scaled to fit · hover for values'}</span>}
         </div>
-        {!multi && (primaryKey === 'usedProj' || primaryKey === 'planned') && (
-          <p className="hint" style={{ marginTop: 0 }}>Add both Project budgets and Project budgets actualised to compare, in GPU-hours: the allocation against what team projects actually used. The gap between them is unused budget. Per-project detail is in the Projects tab.</p>
-        )}
         <div className="controls" style={{ marginTop: 0, alignItems: 'flex-start' }}>
           <label style={{ paddingTop: 5 }}>Indicators</label>
           <span style={{ display: 'inline-flex', flexWrap: 'wrap', gap: 6, flex: 1 }}>
@@ -326,7 +315,6 @@ export default function Analytics({ onNav }) {
             })}
           </tbody>
         </table>
-        <p className="hint">Select a row to chart that indicator above; the Indicators control keeps several on the chart at once. Per-project detail is in the Projects tab.</p>
       </div>
     </section>
   )

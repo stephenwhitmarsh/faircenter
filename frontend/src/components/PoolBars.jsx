@@ -44,17 +44,6 @@ export default function PoolBars({ data, mode = 'both' }) {
         {showTarget && <div className="pool-barrow"><span className="pool-barlabel">Target</span><div className="pool-split sm">{target}</div></div>}
         {showActual && <div className="pool-barrow"><span className="pool-barlabel">Actual use</span><div className="pool-split sm">{actual}</div></div>}
       </div>
-      {showAlloc && (
-        <p className="hint" style={{ margin: '8px 0 0' }}>
-          Committed budgets are <b>{Math.round(committedPc)}%</b> of capacity
-          {overPc > 0.4
-            ? <> — <span className="tag warn">over-committed by {Math.round(overPc)}%</span> past the capacity mark</>
-            : uncommittedPc > 0.4
-              ? <>, leaving {Math.round(uncommittedPc)}% uncommitted (backfilled by best-effort work)</>
-              : null}
-          . Policy allows up to {Math.round(data.ceilingPc || 100)}% (over-subscription {(data.oversub || 1).toFixed(2)}×).
-        </p>
-      )}
       <div className="pool-legend">
         {pools.map((p) => (
           <span key={p.key} className="pool-legend-item">

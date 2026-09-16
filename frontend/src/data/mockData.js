@@ -480,7 +480,6 @@ export function activeSwitcherPeople(cands, n = 12) {
 // the front end (the real app keeps them server-side). status is illustrative.
 export const connectors = [
   { id: 'slurm', name: 'SLURM', kind: 'Scheduler', role: 'source & destination', enabled: true, status: 'connected',
-    detail: 'Source of truth for jobs, queues and accounting; where budgets, lanes and reservations are written.',
     fields: [
       { key: 'restHost', label: 'slurmrestd host', type: 'text', value: 'slurm-ctld.cluster.internal' },
       { key: 'restPort', label: 'Port', type: 'number', value: '6820' },
@@ -490,7 +489,6 @@ export const connectors = [
       { key: 'poll', label: 'Poll interval', type: 'number', value: '30', suffix: 's' },
     ] },
   { id: 'notion', name: 'Notion', kind: 'Project register', role: 'source', enabled: true, status: 'connected',
-    detail: 'Where projects, owners and priorities are maintained; synced into the app.',
     fields: [
       { key: 'token', label: 'Integration token', type: 'password', value: '', placeholder: 'secret_…' },
       { key: 'projDb', label: 'Projects database ID', type: 'text', value: '', placeholder: '32-char id' },
@@ -498,7 +496,6 @@ export const connectors = [
       { key: 'sync', label: 'Sync', type: 'select', value: 'read-only', options: ['read-only', 'two-way'] },
     ] },
   { id: 'slack', name: 'Slack', kind: 'Notifications', role: 'destination', enabled: true, status: 'connected',
-    detail: 'The existing team channel; the primary place approvals, reservation reminders and budget alerts are posted.',
     fields: [
       { key: 'workspace', label: 'Workspace', type: 'text', value: 'your-org' },
       { key: 'auth', label: 'Auth', type: 'select', value: 'Bot token', options: ['Bot token', 'Incoming webhook'] },
@@ -508,7 +505,6 @@ export const connectors = [
       { key: 'events', label: 'Notify on', type: 'select', value: 'approvals + alerts', options: ['approvals only', 'approvals + alerts', 'everything'] },
     ] },
   { id: 'email', name: 'Email (SMTP)', kind: 'Notifications', role: 'destination', enabled: true, status: 'connected',
-    detail: 'Fallback for request digests and alerts to approvers and requesters.',
     fields: [
       { key: 'host', label: 'SMTP host', type: 'text', value: 'smtp.your-org.internal' },
       { key: 'port', label: 'Port', type: 'number', value: '587' },
@@ -518,7 +514,6 @@ export const connectors = [
       { key: 'pass', label: 'Password', type: 'password', value: '', placeholder: 'set server-side' },
     ] },
   { id: 'sso', name: 'Identity (SSO)', kind: 'Authentication', role: 'source', enabled: false, status: 'not configured',
-    detail: 'Signs users in and supplies their roles; until set, the app uses the demo role switcher.',
     fields: [
       { key: 'protocol', label: 'Protocol', type: 'select', value: 'OIDC', options: ['OIDC', 'SAML', 'LDAP'] },
       { key: 'issuer', label: 'Issuer URL', type: 'text', value: '', placeholder: 'https://sso.your-org…' },
@@ -526,7 +521,6 @@ export const connectors = [
       { key: 'secret', label: 'Client secret', type: 'password', value: '' },
     ] },
   { id: 'storage', name: 'Object storage', kind: 'Data', role: 'destination', enabled: false, status: 'not configured',
-    detail: 'Where exports, reports and backups are written.',
     fields: [
       { key: 'endpoint', label: 'S3 endpoint', type: 'text', value: '', placeholder: 'https://s3.your-org…' },
       { key: 'bucket', label: 'Bucket', type: 'text', value: '' },

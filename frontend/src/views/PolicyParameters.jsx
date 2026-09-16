@@ -110,11 +110,6 @@ export default function PolicyParameters() {
               </button>
             ))}
           </div>
-          <p className="hint" style={{ marginTop: 8 }}>
-            {cur?.desc} Budgets are <b>{enfText}</b>.
-            {phase <= 2 && <> A suggested per-person allowance is <b>{fmt(suggestedPersonBudget())}</b> GPU-h.</>}
-            {' '}A phase is a preset: selecting one stages the mechanisms and values below{phaseDirty ? ' (staged, not yet applied)' : ''}; Apply writes them to the scheduler.
-          </p>
         </div>
       )}
 
@@ -135,9 +130,6 @@ export default function PolicyParameters() {
       <div className="card">
         <div className="card-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
           <span>Values</span>
-          <span className={'perm-note ' + (editable ? 'perm-on' : '')}>
-            {editable ? 'Operations · staged, applies on Apply' : 'Editable by operations'}
-          </span>
         </div>
         <table className="data">
           <thead>
@@ -182,17 +174,6 @@ export default function PolicyParameters() {
         )}
       </div>
 
-      <div className="card">
-        <div className="card-title">Tuning indicators <span className="th-unit">per period · illustrative</span></div>
-        <div className="tiles" style={{ marginTop: 4, marginBottom: 0 }}>
-          <Kpi label="Median wait, fast lane" value="7 min" note="last period 18 min" />
-          <Kpi label="Median wait, standard" value="41 min" />
-          <Kpi label="Budget spent at mid-period" value="52%" />
-          <Kpi label="Change requests" value="14" note="4 extensions, 10 budget/priority" />
-          <Kpi label="Committed budget" value={`${Math.round(poolBars().committedPc)}%`} note="of capacity" />
-          <Kpi label="Priority–usage rank correlation" value="0.83" />
-        </div>
-      </div>
     </section>
   )
 }

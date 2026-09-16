@@ -52,9 +52,9 @@ export default function Review() {
     { key: 'start', label: 'Start', sortValue: (r) => r.startMs, render: (r) => fmtDay(r.startMs) },
     { key: 'budget', label: 'Budget', num: true, sortValue: (r) => r.budget, render: (r) => fmt(r.budget) },
     { key: 'consumed', label: 'Consumed', num: true, sortValue: (r) => r.used, render: (r) => fmt(r.used) },
-    { key: 'realisation', label: <>Realisation <InfoTip text="Consumed as a share of allocated budget. For a finished project this is final: how much of its budget it actually used, so a low figure means it over-asked. For a running project it is the share used so far, marked 'to date'. The trend across periods is in Analytics." /></>, sortValue: (r) => r.realisation, render: (r) => <Realisation frac={r.realisation} finished={r.finished} /> },
+    { key: 'realisation', label: <>Realisation <InfoTip text="Consumed as a share of the project's budget. Final for a finished project; for a running one it is the share used so far, marked 'to date'." /></>, sortValue: (r) => r.realisation, render: (r) => <Realisation frac={r.realisation} finished={r.finished} /> },
     { key: 'pace', label: <>Pace <span className="th-unit">slow · fast</span></>, sortValue: (r) => r.pace, render: (r) => <PaceBar pace={r.pace} /> },
-    { key: 'outlook', label: <>Budget outlook <InfoTip text="Projected from the recent job rate: when the budget would run out before the project ends, or how far it is already over. Projections carry the usual uncertainty; a fast pace may be expected. When the project's team is at a phase without project budgets, the figure is a target, not an enforced cap." /></>, sortValue: (r) => (!r.enforced ? Infinity : r.used > r.budget ? -2 : r.runsOut ? r.runsOut : Infinity - 1), render: (r) => { if (!r.enforced) return <span className="hint" title="At this team's phase the budget is a target, not an enforced cap.">target only</span>; const over = Math.round(r.used - r.budget); if (over > 0) return <span className="tag warn">over by {fmt(over)}</span>; if (r.finished) return <span className="hint">ended, within budget</span>; return r.runsOut ? <span className="tag warn">runs out ~{fmtDay(r.runsOut)}</span> : <span className="hint">within budget</span> } },
+    { key: 'outlook', label: <>Budget outlook <InfoTip text="Projected from the recent job rate: when the budget would run out before the project ends, or how far it is already over." /></>, sortValue: (r) => (!r.enforced ? Infinity : r.used > r.budget ? -2 : r.runsOut ? r.runsOut : Infinity - 1), render: (r) => { if (!r.enforced) return <span className="hint" title="At this team's phase the budget is a target, not an enforced cap.">target only</span>; const over = Math.round(r.used - r.budget); if (over > 0) return <span className="tag warn">over by {fmt(over)}</span>; if (r.finished) return <span className="hint">ended, within budget</span>; return r.runsOut ? <span className="tag warn">runs out ~{fmtDay(r.runsOut)}</span> : <span className="hint">within budget</span> } },
   ]
 
   return (
@@ -84,7 +84,6 @@ export default function Review() {
             rows={rows}
           />
         </div>
-        <p className="hint">Consumed is GPU-h used to date. Pace compares that with the budget spread evenly over the project’s run. Realisation is consumed against the whole budget, final once a project has finished. Turn on finished projects to see how fully past budgets were used. Select a row for the full record.</p>
       </div>
     </section>
   )

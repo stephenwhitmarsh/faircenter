@@ -26,7 +26,7 @@ function PoolsCard() {
     <div className="card">
       <div className="card-title">
         Distribution over pools <span className="th-unit">committed vs capacity</span>
-        <InfoTip text="Committed budgets measured against the GPU-hours the cluster offers over the period. Team pools hold the funded projects; the person pool is individual work. Budgets below capacity leave an uncommitted tail (best-effort work backfills it); budgets beyond capacity show as over-committed past the capacity mark. The commit limit (over-subscription) is set in Policy; actual use is in Load." />
+        <InfoTip text="Committed budgets against the GPU-hours the cluster offers over the period. Below capacity leaves an uncommitted tail; beyond it shows as over-committed." />
       </div>
       <PoolBars data={bars} mode="allocated" />
     </div>
@@ -112,14 +112,9 @@ export default function Budgets({ onNav }) {
       </Section>
 
       <Section
-        title="Person pool" meta={`${personPeople.length} people · ${fmt(personTotal)} GPU-h allocated · person pool ${fmt(personPoolHours())} GPU-h`}
+        title="Person pool" meta={`${fmt(personPoolHours())} GPU-h · ${personPeople.length} people`}
         open={isOpen('person')} onToggle={() => toggle('person')}
       >
-        <p className="hint" style={{ marginTop: 0 }}>
-          Discretionary individual work: best-effort, with no reservation or approval, and not drawn from any
-          team budget. Every person gets the same budget, set by policy (the person pool divided across people);
-          what varies is how much each has used. Home team is shown for attribution only.
-        </p>
         <div className="tbl-scroll">
           <DataTable
             initialSort={{ key: 'used', dir: 'desc' }}
