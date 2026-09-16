@@ -5,6 +5,8 @@ dist/
 frontend/dist/
 # scratch / staging
 .stage/
+# sync tarballs (used to move src/dist between machines)
+*.tgz
 # logs
 *.log
 npm-debug.log*
@@ -12,3 +14,8 @@ npm-debug.log*
 .DS_Store
 .vscode/
 vite.config.js.timestamp-*.mjs
+
+# scratch build folders (cannot be deleted from the cloud sandbox)
+_to_delete/
+# obsidian workspace
+.obsidian/

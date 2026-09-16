@@ -1,10 +1,11 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, Fragment } from 'react'
 
 // Sortable table.
 // columns: [{ key, label, num?, render?(row), sortValue?(row) }]
 // initialSort: { key, dir } where dir is 'asc' | 'desc'
-export default function DataTable({ columns, rows, initialSort, onRowClick, selectedId }) {
+export default function DataTable({ columns, rows, initialSort, onRowClick, selectedId, colWidths, rowClassName, expandedId, renderExpanded }) {
   const [sort, setSort] = useState(initialSort ?? null)
+  const total = colWidths ? colWidths.reduce((a, b) => a + b, 0) : undefined
 
   const sorted = useMemo(() => {
     if (!sort) return rows
@@ -31,7 +32,8 @@ export default function DataTable({ columns, rows, initialSort, onRowClick, sele
   }
 
   return (
-    <table className="data">
+    <table className={'data' + (colWidths ? ' data-fixed' : '')} style={colWidths ? { width: total, tableLayout: 'fixed' } : undefined}>
+      {colWidths && <colgroup>{columns.map((c, i) => <col key={c.key} style={{ width: colWidths[i] }} />)}</colgroup>}
       <thead>
         <tr>
           {columns.map((c) => {
@@ -51,19 +53,28 @@ export default function DataTable({ columns, rows, initialSort, onRowClick, sele
         </tr>
       </thead>
       <tbody>
-        {sorted.map((r, i) => (
-          <tr
-            key={r.id ?? i}
-            className={[onRowClick ? 'row-click' : '', selectedId && r.id === selectedId ? 'row-sel' : ''].filter(Boolean).join(' ')}
-            onClick={onRowClick ? () => onRowClick(r) : undefined}
-          >
-            {columns.map((c) => (
-              <td key={c.key} className={[c.num ? 'num' : '', c.tdClass || ''].filter(Boolean).join(' ')}>
-                {c.render ? c.render(r) : r[c.key]}
-              </td>
-            ))}
-          </tr>
-        ))}
+        {sorted.map((r, i) => {
+          const isExpanded = renderExpanded && expandedId != null && r.id === expandedId
+          return (
+            <Fragment key={r.id ?? i}>
+              <tr
+                className={[onRowClick ? 'row-click' : '', (selectedId && r.id === selectedId) || isExpanded ? 'row-sel' : '', rowClassName ? rowClassName(r) : ''].filter(Boolean).join(' ')}
+                onClick={onRowClick ? () => onRowClick(r) : undefined}
+              >
+                {columns.map((c) => (
+                  <td key={c.key} className={[c.num ? 'num' : '', c.tdClass || ''].filter(Boolean).join(' ')}>
+                    {c.render ? c.render(r) : r[c.key]}
+                  </td>
+                ))}
+              </tr>
+              {isExpanded && (
+                <tr className="row-expand">
+                  <td colSpan={columns.length} style={{ padding: 0 }}>{renderExpanded(r)}</td>
+                </tr>
+              )}
+            </Fragment>
+          )
+        })}
       </tbody>
     </table>
   )

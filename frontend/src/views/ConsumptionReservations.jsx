@@ -1,15 +1,15 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  ReferenceLine, ReferenceArea, Brush,
+  ReferenceLine, ReferenceArea,
 } from 'recharts'
 import DataTable from '../components/DataTable.jsx'
 import InfoTip from '../components/InfoTip.jsx'
 import {
-  cluster, projects, teams, people, reservations, parameters, period, teamHue,
-  projectOwner, teamById, priorityTier, recentDailyRate, projRate, projectState,
-  loadSeries, forecastSeries, consumedGpuH, runningAt, activeProjects,
-  fmtDay, fmtDateTime,
+  capacity, effectiveGpus, projects, teams, people, reservations, parameters, period, teamHue,
+  projectOwner, teamById, projectState, personProjects, primaryTeam, runningJobsAt,
+  loadSeries, splitUnits, RESV_SFX, consumedGpuH, runningAt, activeProjects, poolBars,
+  fmtDay, fmtDateTime, isoDate,
 } from '../data/mockData.js'
 import { useSession } from '../session.jsx'
 
@@ -50,29 +50,26 @@ function projListForScope(scope) {
   return projects
 }
 
-// Range sets how much history to show; the forecast extends forward by a
-// fraction of that same history span, so it scales with the chosen period.
-function windowFor(range, custom, fcPct) {
+// Range sets how much of the timeline to show. Trailing ranges end at "now";
+// Total spans the whole period so upcoming reservations are visible past now.
+function windowFor(range, custom) {
   const now = period.nowMs
   if (range === 'custom') {
     const t0 = Date.parse(custom.from), t1 = Date.parse(custom.to)
     return { t0: isNaN(t0) ? period.startMs : t0, fEnd: isNaN(t1) ? now : t1 }
   }
-  let t0
-  if (range === 'today') t0 = floorDay(now)
-  else if (range === '7d') t0 = now - 7 * DAY
-  else if (range === '30d') t0 = now - 30 * DAY
-  else if (range === '90d') t0 = now - 90 * DAY
-  else t0 = period.startMs // total
-  const hist = now - t0
-  const fEnd = Math.min(period.endMs, now + fcPct * hist)
-  return { t0, fEnd }
+  if (range === 'today') return { t0: floorDay(now), fEnd: now }
+  if (range === '7d') return { t0: now - 7 * DAY, fEnd: now }
+  if (range === '30d') return { t0: now - 30 * DAY, fEnd: now }
+  if (range === '90d') return { t0: now - 90 * DAY, fEnd: now }
+  return { t0: period.startMs, fEnd: period.endMs } // total
 }
 
 // ordered bucket list and their colours for the current scope + rows
 function orderedBuckets(scope, subset, presentSet) {
   if (scope === 'all') {
-    const order = [...TEAM_RANK.map((x) => x.name).filter((n) => TOP_TEAMS.has(n)), 'Other', 'Personal', 'No team']
+    // Personal first so it stacks at the bottom of the chart (it is the biggest band now)
+    const order = ['Personal', ...TEAM_RANK.map((x) => x.name).filter((n) => TOP_TEAMS.has(n)), 'Other', 'No team']
     return order.filter((b) => presentSet.has(b)).map((b) => ({ key: b, colour: bucketColour(b) }))
   }
   return subset.filter((p) => presentSet.has(p.name)).map((p, i) => ({ key: p.name, colour: DRILL_HUES[i % DRILL_HUES.length] }))
@@ -115,25 +112,93 @@ function ScopePicker({ value, onChange }) {
   )
 }
 
-function ChartTooltip({ active, payload, label, colourByKey, yUnit, capGpus }) {
+function ChartTooltip({ active, payload, label, colourByKey, capGpus }) {
   if (!active || !payload || !payload.length) return null
-  const items = payload.filter((p) => p.value > 0).sort((a, b) => b.value - a.value)
-  const total = payload.reduce((s, p) => s + (p.value || 0), 0)
-  const show = (v) => (yUnit === 'pct' ? Math.round((v / capGpus) * 100) + '%' : Math.round(v) + ' GPU')
+  const isCap = (p) => p.dataKey === 'cap' || p.name === 'capacity'
+  const capItem = payload.find(isCap)
+  const capNow = capItem ? capItem.value : capGpus
+  // merge each bucket's job and reservation series back into one line
+  const byKey = {}
+  for (const p of payload) {
+    if (isCap(p) || p.dataKey === 'forecast') continue
+    const dk = String(p.dataKey || p.name || '')
+    const isR = dk.endsWith(RESV_SFX)
+    const base = isR ? dk.slice(0, -RESV_SFX.length) : dk
+    const o = byKey[base] || (byKey[base] = { name: base, value: 0, resv: 0 })
+    o.value += p.value || 0
+    if (isR) o.resv += p.value || 0
+  }
+  const items = Object.values(byKey).filter((o) => o.value > 0).sort((a, b) => b.value - a.value)
+  const total = items.reduce((s, o) => s + o.value, 0)
+  const pct = (v) => Math.round((v / (capNow || 1)) * 100) + '%'
+  const show = (v) => `${Math.round(v)} GPU · ${pct(v)}`
   return (
-    <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12, padding: '8px 10px', minWidth: 190 }}>
+    <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12, padding: '8px 10px', minWidth: 210 }}>
       <div style={{ color: 'var(--ink-2)', marginBottom: 5 }}>{fmtDateTime(label)}</div>
       {items.slice(0, 12).map((p) => (
         <div key={p.name} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, margin: '2px 0' }}>
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
             <i style={{ width: 9, height: 9, borderRadius: 2, background: colourByKey[p.name] || p.color, display: 'inline-block' }} />{p.name}
+            {p.resv > 0 && <span style={{ color: 'var(--ink-2)' }}>({Math.round(p.resv)} GPU reserved)</span>}
           </span>
           <span style={{ fontVariantNumeric: 'tabular-nums' }}>{show(p.value)}</span>
         </div>
       ))}
-      <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid var(--border)', marginTop: 5, paddingTop: 5, fontWeight: 600 }}>
-        <span>Total load</span><span style={{ fontVariantNumeric: 'tabular-nums' }}>{show(total)}</span>
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, borderTop: '1px solid var(--border)', marginTop: 5, paddingTop: 5, fontWeight: 600 }}>
+        <span>Total load</span>
+        <span style={{ fontVariantNumeric: 'tabular-nums' }}>{show(total)}</span>
       </div>
+      {capItem && <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, color: 'var(--ink-2)', marginTop: 2 }}><span>Capacity</span><span style={{ fontVariantNumeric: 'tabular-nums' }}>{Math.round(capItem.value)} GPU</span></div>}
+    </div>
+  )
+}
+
+// Full-timeline navigator: the whole period drawn dim, the visible window drawn
+// bright, reservations marked in their team's colour, draggable to move/resize.
+function Navigator({ rows, startMs, endMs, nowMs, t0, t1, capGpus, reservations, onChange }) {
+  const wrap = useRef(null)
+  const drag = useRef(null)
+  const span = (endMs - startMs) || 1
+  const H = 64, PAD = 3
+  const fr = (t) => (t - startMs) / span
+  const xv = (t) => fr(t) * 1000
+  const pct = (t) => Math.max(0, Math.min(100, fr(t) * 100))
+  const maxY = Math.max(capGpus || 1, ...rows.map((r) => r.load || 0))
+  const yv = (v) => H - (v / maxY) * (H - PAD * 2) - PAD
+  let d = ''
+  if (rows.length) {
+    d = `M ${xv(rows[0].t).toFixed(1)} ${H} L ${xv(rows[0].t).toFixed(1)} ${yv(rows[0].load).toFixed(1)}`
+    for (let i = 1; i < rows.length; i++) d += ` L ${xv(rows[i].t).toFixed(1)} ${yv(rows[i - 1].load).toFixed(1)} L ${xv(rows[i].t).toFixed(1)} ${yv(rows[i].load).toFixed(1)}`
+    d += ` L ${xv(endMs).toFixed(1)} ${yv(rows[rows.length - 1].load).toFixed(1)} L ${xv(endMs).toFixed(1)} ${H} Z`
+  }
+  const selL = pct(t0), selR = pct(t1), selW = Math.max(0, selR - selL)
+  const timeAt = (clientX) => { const el = wrap.current; if (!el) return null; const b = el.getBoundingClientRect(); const f = Math.max(0, Math.min(1, (clientX - b.left) / b.width)); return startMs + f * span }
+  const minWin = DAY
+  const move = (e) => {
+    const dg = drag.current; if (!dg) return
+    const at = timeAt(e.clientX); if (at == null) return
+    let a = dg.t0, b = dg.t1
+    if (dg.mode === 'move') { const dt = at - dg.at, w = dg.t1 - dg.t0; a = dg.t0 + dt; b = dg.t1 + dt; if (a < startMs) { a = startMs; b = startMs + w } if (b > endMs) { b = endMs; a = endMs - w } }
+    else if (dg.mode === 'l') { a = Math.max(startMs, Math.min(at, dg.t1 - minWin)) }
+    else if (dg.mode === 'r') { b = Math.min(endMs, Math.max(at, dg.t0 + minWin)) }
+    onChange(Math.round(a), Math.round(b))
+  }
+  const end = () => { drag.current = null; window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', end) }
+  const begin = (mode) => (e) => { e.preventDefault(); e.stopPropagation(); drag.current = { mode, t0, t1, at: timeAt(e.clientX) }; window.addEventListener('pointermove', move); window.addEventListener('pointerup', end) }
+  const onTrack = (e) => { const at = timeAt(e.clientX); if (at == null) return; const w = t1 - t0; let a = at - w / 2, b = at + w / 2; if (a < startMs) { a = startMs; b = startMs + w } if (b > endMs) { b = endMs; a = endMs - w } onChange(Math.round(a), Math.round(b)) }
+  return (
+    <div ref={wrap} style={{ position: 'relative', width: '100%', height: H, userSelect: 'none', touchAction: 'none' }}>
+      <svg viewBox={`0 0 1000 ${H}`} preserveAspectRatio="none" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', display: 'block' }}>
+        <path d={d} fill="var(--ink-2)" fillOpacity="0.28" />
+        <clipPath id="nav-sel"><rect x={xv(t0)} y="0" width={Math.max(0, xv(t1) - xv(t0))} height={H} /></clipPath>
+        <path d={d} fill="var(--accent)" fillOpacity="0.6" clipPath="url(#nav-sel)" />
+        {reservations.map((r) => { const x = xv(Math.max(r.startMs, startMs)); const w = Math.max(2.5, xv(Math.min(r.endMs, endMs)) - x); return <rect key={r.id} x={x} y={H - 9} width={w} height="7" fill={r.colour} fillOpacity="0.95" /> })}
+        <rect x={xv(nowMs) - 0.8} y="0" width="1.6" height={H} fill="var(--ink)" fillOpacity="0.65" />
+      </svg>
+      <div onPointerDown={onTrack} style={{ position: 'absolute', inset: 0, cursor: 'pointer' }} />
+      <div onPointerDown={begin('move')} style={{ position: 'absolute', top: 0, bottom: 0, left: selL + '%', width: selW + '%', background: 'color-mix(in srgb, var(--accent) 15%, transparent)', border: '1px solid var(--accent)', boxSizing: 'border-box', cursor: 'grab' }} />
+      <div onPointerDown={begin('l')} title="drag to resize" style={{ position: 'absolute', top: 0, bottom: 0, left: `calc(${selL}% - 5px)`, width: 10, cursor: 'ew-resize', background: 'var(--accent)', borderRadius: 2 }} />
+      <div onPointerDown={begin('r')} title="drag to resize" style={{ position: 'absolute', top: 0, bottom: 0, left: `calc(${selR}% - 5px)`, width: 10, cursor: 'ew-resize', background: 'var(--accent)', borderRadius: 2 }} />
     </div>
   )
 }
@@ -141,77 +206,94 @@ function ChartTooltip({ active, payload, label, colourByKey, yUnit, capGpus }) {
 export default function ConsumptionReservations() {
   const [scope, setScope] = useState('all')
   const [range, setRange] = useState('30d')
-  const [fcPct, setFcPct] = useState(0.5) // forecast horizon as a fraction of the shown history
-  const [fcMethod, setFcMethod] = useState('recent')
-  const [yUnit, setYUnit] = useState('gpus')
   const [custom, setCustom] = useState({ from: '2026-08-01', to: '2026-10-15' })
-  const { can } = useSession()
-  const [headroomPct, setHeadroomPct] = useState(Math.round(parameters.headroom.org * 100))
-  const [oversub, setOversub] = useState(parameters.oversubscriptionFactor)
-  const [admApplied, setAdmApplied] = useState(false)
+  const { can, session } = useSession()
+  const [rev, setRev] = useState(0) // bump to recompute after a reservation is cancelled
+  // team groups in the projects table: top (coloured) teams and Personal open by default
+  const [openGroups, setOpenGroups] = useState(() => new Set()) // all team groups collapsed by default
+  const toggleGroup = (key) => setOpenGroups((s) => { const n = new Set(s); n.has(key) ? n.delete(key) : n.add(key); return n })
+  const [projView, setProjView] = useState('grouped') // 'grouped' by team, or 'flat' sortable across all
+  const [personOpen, setPersonOpen] = useState(false) // personal-work overview, collapsed by default
+  const canCancelResv = (r) => {
+    if (session.role === 'ops') return true
+    const p = projects.find((pp) => pp.id === r.projectId)
+    if (session.role === 'lead') return p?.teamId === session.teamId
+    if (session.role === 'projlead') return p?.leadPersonId === session.personId
+    return false
+  }
+  const cancelResv = (id) => { const i = reservations.findIndex((r) => r.id === id); if (i >= 0) reservations.splice(i, 1); setRev((v) => v + 1) }
+  // capacity schedule (operations-editable); seeded from the model
+  const [cap, setCap] = useState(() => ({ base: capacity.base, adjustments: capacity.adjustments.map((a) => ({ ...a })) }))
+  const [capApplied, setCapApplied] = useState(false)
   const [sel, setSel] = useState(null) // {a,b} table window painted on the chart
   const [dragSel, setDragSel] = useState(null) // live drag highlight
   const dragRef = useRef(null)
   // the visible window; presets/forecast set it, and the navigator strip pans/zooms it
-  const [viewWin, setViewWin] = useState(() => windowFor('30d', { from: '', to: '' }, 0.5))
-  useEffect(() => { setViewWin(windowFor(range, custom, fcPct)) }, [range, custom.from, custom.to, fcPct]) // eslint-disable-line react-hooks/exhaustive-deps
+  const [viewWin, setViewWin] = useState(() => windowFor('30d', { from: '', to: '' }))
+  useEffect(() => { setViewWin(windowFor(range, custom)) }, [range, custom.from, custom.to]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const subset = projListForScope(scope)
   const keyOf = scope === 'all' ? keyOfAll : (p) => p.name
-  const fcOn = fcPct > 0
   const { t0, fEnd } = viewWin
-  const tActualEnd = Math.min(fEnd, period.nowMs)
 
   const chart = useMemo(() => {
-    const act = loadSeries(subset, t0, tActualEnd, keyOf)
-    const fc = fcOn && fEnd > period.nowMs ? forecastSeries(subset, period.nowMs, fEnd, keyOf, fcMethod) : { rows: [], buckets: [] }
+    // one pass over the whole window: jobs draw as steps up to "now", reservations
+    // draw wherever they fall, so anything past "now" is booked reservations only.
+    const act = loadSeries(subset, t0, fEnd, keyOf, { units: splitUnits(), split: true })
     const present = new Set()
-    for (const r of [...act.rows, ...fc.rows]) for (const k of Object.keys(r)) if (k !== 't' && k !== 'forecast' && r[k] > 0) present.add(k)
+    for (const r of act.rows) for (const k of Object.keys(r)) { if (k === 't' || !(r[k] > 0)) continue; present.add(k.endsWith(RESV_SFX) ? k.slice(0, -RESV_SFX.length) : k) }
     const units = orderedBuckets(scope, subset, present)
-    return { rows: [...act.rows, ...fc.rows], units, mode: act.mode }
-  }, [scope, t0, fEnd, fcOn, fcMethod]) // eslint-disable-line react-hooks/exhaustive-deps
+    return { rows: act.rows, units, mode: act.mode }
+  }, [scope, t0, fEnd, rev]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const colourByKey = Object.fromEntries(chart.units.map((u) => [u.key, u.colour]))
-  const capGpus = cluster.gpus
+  const effGpus = (ms) => effectiveGpus(ms, cap)
+  const capGpus = effGpus(period.nowMs)
+  // stepped capacity value at each plotted point, so scheduled changes show on the chart
+  const chartRows = useMemo(() => chart.rows.map((r) => ({ ...r, cap: effGpus(r.t) })), [chart.rows, cap]) // eslint-disable-line react-hooks/exhaustive-deps
+  // shared y-axis max: the load in view (auto-scales, incl. when drilled), and the capacity
+  // line at cluster scope. Both the GPU (left) and % (right) axes use this domain.
+  const yMax = useMemo(() => {
+    let m = 0
+    for (const r of chartRows) { let s = 0; for (const u of chart.units) s += (r[u.key] || 0) + (r[u.key + RESV_SFX] || 0); if (s > m) m = s }
+    if (scope === 'all') m = Math.max(m, capGpus)
+    return Math.max(64, Math.ceil(m / 64) * 64)
+  }, [chartRows, chart.units, capGpus, scope])
   // full-range overview for the navigator strip
   const overviewRows = useMemo(() => loadSeries(projects, period.startMs, period.endMs, () => 'load').rows, [])
-  const ov0 = overviewRows.length ? overviewRows[0].t : period.startMs
-  const ovIdx = (t) => Math.max(0, Math.min(overviewRows.length - 1, Math.round((t - ov0) / DAY)))
-  const navStart = ovIdx(t0)
-  const navEnd = Math.min(overviewRows.length - 1, Math.max(ovIdx(fEnd), navStart + 1))
-  const onNav = (r) => {
-    if (!r || r.startIndex == null || r.endIndex == null || r.endIndex <= r.startIndex) return
-    const a = overviewRows[r.startIndex].t, b = overviewRows[r.endIndex].t
-    if (a !== t0 || b !== fEnd) setViewWin({ t0: a, fEnd: b })
-  }
   const drilled = scope !== 'all'
+  const resvColour = (r) => { const p = projects.find((pp) => pp.id === r.projectId); const key = p ? keyOf(p) : 'No team'; return colourByKey[key] || bucketColour(key) }
 
-  // reservations visible in this scope + window
-  const resvViz = reservations.map((r) => {
-    const p = projects.find((pp) => pp.id === r.projectId)
-    if (!p || !subset.some((s) => s.id === p.id)) return null
-    if (r.endMs < t0 || r.startMs > fEnd) return null
-    const key = keyOf(p)
-    return { ...r, colour: colourByKey[key] || bucketColour(key), team: key, proj: p.name }
-  }).filter(Boolean)
+  // all reservations across the full timeline, coloured, for the navigator marks
+  const resvNav = useMemo(() => reservations.map((r) => ({ id: r.id, startMs: r.startMs, endMs: r.endMs, colour: resvColour(r) })), [rev, scope]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // tiles
-  const runningNow = runningAt(projects.map((p) => p.id), period.nowMs)
-  const active = activeProjects().length
-  const consumed = consumedGpuH(subset, t0, tActualEnd)
-  const headroomGpus = Math.round(cluster.gpus * (headroomPct / 100))
-  const admDirty = headroomPct !== Math.round(parameters.headroom.org * 100) || oversub !== parameters.oversubscriptionFactor
-  const applyAdmission = () => { parameters.headroom.org = headroomPct / 100; parameters.oversubscriptionFactor = oversub; setAdmApplied(true) }
+  // capacity schedule editing
+  const capDirty = JSON.stringify(cap) !== JSON.stringify({ base: capacity.base, adjustments: capacity.adjustments })
+  const setCapBase = (v) => { setCap((c) => ({ ...c, base: Math.max(0, Number(v) || 0) })); setCapApplied(false) }
+  const setCapAdj = (i, patch) => { setCap((c) => ({ ...c, adjustments: c.adjustments.map((a, j) => (j === i ? { ...a, ...patch } : a)) })); setCapApplied(false) }
+  const addCapAdj = () => { setCap((c) => ({ ...c, adjustments: [...c.adjustments, { at: period.nowMs, gpus: c.adjustments.length ? c.adjustments[c.adjustments.length - 1].gpus : c.base, note: '' }] })); setCapApplied(false) }
+  const rmCapAdj = (i) => { setCap((c) => ({ ...c, adjustments: c.adjustments.filter((_, j) => j !== i) })); setCapApplied(false) }
+  const applyCapacity = () => {
+    const sorted = [...cap.adjustments].sort((a, b) => a.at - b.at)
+    capacity.base = cap.base
+    capacity.adjustments.splice(0, capacity.adjustments.length, ...sorted.map((a) => ({ ...a })))
+    setCap({ base: cap.base, adjustments: sorted.map((a) => ({ ...a })) })
+    setCapApplied(true)
+  }
 
   // a dragged selection drives the tables; with none, default to the current moment
-  useEffect(() => { setSel(null) }, [range, scope, custom.from, custom.to, fcPct])
+  useEffect(() => { setSel(null) }, [range, scope, custom.from, custom.to])
   const selLabel = sel ? `${fmtDay(sel.a)} – ${fmtDay(sel.b)}` : `now (${fmtDay(period.nowMs)})`
-  const projRows = sel
+  // the projects-pool projects (teams + org): personal work is best-effort with no enforced
+  // budget, so it does not belong in the budget/forecast table — it lives in the Budgets person pool
+  const projRows = (sel
     ? projects.filter((p) => p.endMs >= sel.a && p.startMs <= sel.b)
     : projects.filter((p) => p.startMs <= period.nowMs && p.endMs >= period.nowMs)
-  const resvRows = sel
-    ? reservations.filter((r) => r.endMs >= sel.a && r.startMs <= sel.b)
-    : reservations.filter((r) => r.endMs >= period.nowMs && r.startMs <= fEnd)
+  ).filter((p) => p.funding !== 'person')
+  // reservations follow the dragged selection, else the window currently shown on the chart
+  const resvA = sel ? sel.a : t0, resvB = sel ? sel.b : fEnd
+  const resvRows = reservations.filter((r) => r.endMs >= resvA && r.startMs <= resvB)
+  const resvLabel = sel ? `${fmtDay(sel.a)} – ${fmtDay(sel.b)}` : `${fmtDay(t0)} – ${fmtDay(fEnd)}`
   // budget/used/left reflect the dragged window when there is one, else the whole project
   const winBudget = (p) => {
     if (!sel) return p.budget
@@ -221,6 +303,62 @@ export default function ConsumptionReservations() {
   }
   const winUsed = (p) => (sel ? consumedGpuH([p], sel.a, sel.b) : p.used)
   const winLeft = (p) => Math.max(0, winBudget(p) - winUsed(p))
+  // group the projects by team, the way the graph buckets them: top teams get their
+  // graph colour, the smaller teams (the grey "Other" band) get a grey swatch.
+  const projGroups = (() => {
+    const groups = []
+    const byTeam = new Map()
+    const personal = [], noTeam = []
+    for (const p of projRows) {
+      if (p.funding === 'person') { personal.push(p); continue }
+      if (!p.teamId) { noTeam.push(p); continue }
+      if (!byTeam.has(p.teamId)) byTeam.set(p.teamId, [])
+      byTeam.get(p.teamId).push(p)
+    }
+    for (const [teamId, rows] of byTeam) {
+      const name = teamById(teamId)?.name || 'team'
+      const top = TOP_TEAMS.has(name)
+      groups.push({ key: 't:' + teamId, name, rows, top, colour: top ? bucketColour(name) : bucketColour('Other') })
+    }
+    // top teams first (in graph rank order), then the rest by size
+    const rank = TEAM_RANK.map((x) => x.name)
+    groups.sort((a, b) => (b.top - a.top) || (a.top ? rank.indexOf(a.name) - rank.indexOf(b.name) : b.rows.length - a.rows.length))
+    if (personal.length) groups.push({ key: 'personal', name: 'Personal', rows: personal, top: false, colour: bucketColour('Personal') })
+    if (noTeam.length) groups.push({ key: 'org', name: 'Organisation', rows: noTeam, top: false, colour: bucketColour('No team') })
+    return groups
+  })()
+  const projColumns = [
+    { key: 'name', label: 'Project', render: (p) => (p.funding === 'person' ? <span className="tag">personal</span> : p.name) },
+    { key: 'owner', label: 'Owner', sortValue: (p) => projectOwner(p), render: (p) => projectOwner(p) },
+    { key: 'budget', label: 'Budget', num: true, sortValue: (p) => winBudget(p), render: (p) => fmt(winBudget(p)) },
+    { key: 'used', label: 'Used', num: true, sortValue: (p) => winUsed(p), render: (p) => fmt(winUsed(p)) },
+    { key: 'left', label: 'Left', num: true, sortValue: (p) => winLeft(p), render: (p) => fmt(winLeft(p)) },
+    { key: 'prog', label: 'Consumption', sortable: false, render: (p) => { const b = winBudget(p) || 1; const pc = Math.min(100, (winUsed(p) / b) * 100); return (<div className="meter" title={`${Math.round((winUsed(p) / b) * 100)}%`}><span style={{ width: pc + '%' }} /></div>) } },
+    { key: 'status', label: 'Budget status', sortValue: (p) => winUsed(p) - winBudget(p), render: (p) => { const over = winUsed(p) - winBudget(p); if (over > 0) return <span className="tag warn">over by {fmt(Math.round(over))}</span>; if (projectState(p) === 'finished') return <span className="hint">ended, within budget</span>; return <span className="hint">within budget</span> } },
+  ]
+  const rowClick = (p) => setScope('project:' + p.id)
+  const selId = scope.startsWith('project:') ? scope.split(':')[1] : null
+  // fixed, shared column widths so every team's table lines up (order matches projColumns)
+  const PROJ_COLW = [160, 120, 92, 92, 92, 128, 130]
+  const PROJ_COLW_TOTAL = PROJ_COLW.reduce((a, b) => a + b, 0)
+
+  // personal work summarised by person: everyone running individual (person-pool) jobs
+  const personRunGpus = useMemo(() => {
+    const m = {}
+    for (const j of runningJobsAt()) { const pr = projects.find((p) => p.id === j.projectId); if (pr?.funding === 'person') m[j.personId] = (m[j.personId] || 0) + j.gpus }
+    return m
+  }, [rev])
+  const personPeople = useMemo(() => {
+    const byId = new Map()
+    for (const p of personProjects) {
+      const o = byId.get(p.personId) || { id: p.personId, name: projectOwner(p), team: (primaryTeam(people.find((pp) => pp.id === p.personId) || {}) || {}).name || '—', budget: 0, used: 0, n: 0 }
+      o.budget += p.budget; o.used += p.used; o.n += 1
+      byId.set(p.personId, o)
+    }
+    return [...byId.values()].map((o) => ({ ...o, running: personRunGpus[o.id] || 0 }))
+  }, [personRunGpus])
+  const personUsed = personPeople.reduce((s, r) => s + r.used, 0)
+  const personBudgetTotal = personPeople.reduce((s, r) => s + r.budget, 0)
 
   // regular, aligned x-axis ticks so dense actual data does not crush the labels
   const span = fEnd - t0
@@ -233,81 +371,43 @@ export default function ConsumptionReservations() {
 
   return (
     <section>
-      <div className="view-head">
-        <h2 className="view-title">Planning</h2>
-        <p className="view-intro">
-          GPU load over time, built from individual jobs the way it comes from SLURM: the
-          band is the number of GPUs held by running jobs, so it steps up and down as jobs
-          start and finish. Scope to a team, project or person; past “now” the load is
-          forecast. Reservations hold GPUs for set windows and show as blocks.
-        </p>
-      </div>
-
-      <div className="controls">
-        <label>Scope</label>
-        <ScopePicker value={scope} onChange={setScope} />
-        <label style={{ marginLeft: 8 }}>Range</label>
-        <div className="seg">
-          <button className={range === 'today' ? 'active' : ''} onClick={() => setRange('today')}>Today</button>
-          <button className={range === '7d' ? 'active' : ''} onClick={() => setRange('7d')}>7d</button>
-          <button className={range === '30d' ? 'active' : ''} onClick={() => setRange('30d')}>30d</button>
-          <button className={range === '90d' ? 'active' : ''} onClick={() => setRange('90d')}>90d</button>
-          <button className={range === 'total' ? 'active' : ''} onClick={() => setRange('total')}>Total</button>
-          <button className={range === 'custom' ? 'active' : ''} onClick={() => setRange('custom')}>Custom</button>
-        </div>
-        {range === 'custom' && (<>
-          <input type="date" value={custom.from} onChange={(e) => setCustom((c) => ({ ...c, from: e.target.value }))} />
-          <span className="hint">to</span>
-          <input type="date" value={custom.to} onChange={(e) => setCustom((c) => ({ ...c, to: e.target.value }))} />
-        </>)}
-        <label style={{ marginLeft: 8 }} title="Forecast horizon, as a fraction of the history shown">Forecast</label>
-        <div className="seg">
-          <button className={fcPct === 0 ? 'active' : ''} onClick={() => setFcPct(0)}>Off</button>
-          <button className={fcPct === 0.25 ? 'active' : ''} onClick={() => setFcPct(0.25)}>25%</button>
-          <button className={fcPct === 0.5 ? 'active' : ''} onClick={() => setFcPct(0.5)}>50%</button>
-          <button className={fcPct === 1 ? 'active' : ''} onClick={() => setFcPct(1)}>100%</button>
-        </div>
-        <select value={fcMethod} onChange={(e) => setFcMethod(e.target.value)} disabled={!fcOn} title="Forecast model">
-          <option value="recent">Recent rate</option>
-          <option value="linear">Linear from start</option>
-          <option value="spline" disabled>Spline / trend (planned)</option>
-          <option value="ml" disabled>Learned model (planned)</option>
-        </select>
-        <label style={{ marginLeft: 8 }}>Y-axis</label>
-        <div className="seg">
-          <button className={yUnit === 'gpus' ? 'active' : ''} onClick={() => setYUnit('gpus')}>GPUs</button>
-          <button className={yUnit === 'pct' ? 'active' : ''} onClick={() => setYUnit('pct')}>% capacity</button>
-        </div>
-      </div>
-
-      <div className="tiles">
-        <Tile label="Cluster" value={fmt(cluster.gpus)} note="GPUs" />
-        <Tile label="Running now" value={Math.round((runningNow / cluster.gpus) * 100) + '%'} note={`${fmt(runningNow)} GPUs in use`} />
-        <Tile label="Active projects" value={fmt(active)} note={`of ${projects.length}`} />
-        <Tile label="Consumed (in view)" value={fmt(consumed)} note="GPU-h in the window" />
-        <Tile label="Headroom" value={fmt(headroomGpus)} note={`${headroomPct}% of GPUs held back`} />
-      </div>
-
-      {can('editHeadroom') && (
-        <div className="editbar">
-          <span className="perm-note perm-on">Operations · admission control</span>
-          <label>Headroom</label>
-          <span className="numin"><input type="number" min="0" max="50" step="1" value={headroomPct} onChange={(e) => { setHeadroomPct(Number(e.target.value)); setAdmApplied(false) }} style={{ width: 60 }} /><span className="numin-suffix">% held back</span></span>
-          <label>Over-subscription</label>
-          <span className="numin"><input type="number" min="1" max="2" step="0.05" value={oversub} onChange={(e) => { setOversub(Number(e.target.value)); setAdmApplied(false) }} style={{ width: 60 }} /><span className="numin-suffix">×</span></span>
-          <button className="btn primary" disabled={!admDirty} onClick={applyAdmission}>Apply to SLURM</button>
-          <span className="hint">{admDirty ? 'Staged.' : admApplied ? 'Applied.' : 'A grant is allowed while committed demand ≤ capacity × (over-subscription − headroom).'}</span>
+      {can('editCapacity') && (
+        <div className="card">
+          <div className="card-title">
+            Capacity schedule <span className="rolechip ops">ops</span>
+            <InfoTip text="Total GPUs in service over time. Pods and expansions change the count on a set date; the dashed capacity line on the chart and the tiles read from this schedule, so a planned expansion shows against load and reservations." />
+          </div>
+          <div className="editbar" style={{ border: 'none', padding: 0, marginBottom: 4 }}>
+            <label>Base (from {fmtDay(period.startMs)})</label>
+            <span className="numin"><input type="number" min="0" step="64" value={cap.base} onChange={(e) => setCapBase(e.target.value)} style={{ width: 80 }} /><span className="numin-suffix">GPUs</span></span>
+            <span className="hint">Now in service: <b>{fmt(capGpus)}</b> GPUs</span>
+          </div>
+          <table className="capsched">
+            <thead><tr><th>Effective from</th><th>GPUs</th><th>Note</th><th></th></tr></thead>
+            <tbody>
+              {cap.adjustments.map((a, i) => (
+                <tr key={i}>
+                  <td><input type="date" value={isoDate(a.at)} onChange={(e) => setCapAdj(i, { at: Date.parse(e.target.value + 'T00:00:00Z') })} /></td>
+                  <td><input type="number" min="0" step="64" value={a.gpus} onChange={(e) => setCapAdj(i, { gpus: Math.max(0, Number(e.target.value) || 0) })} style={{ width: 90 }} /></td>
+                  <td><input value={a.note} onChange={(e) => setCapAdj(i, { note: e.target.value })} placeholder="e.g. H200 pod online" style={{ width: 220 }} /></td>
+                  <td><button className="btn" style={{ padding: '2px 8px' }} onClick={() => rmCapAdj(i)}>Remove</button></td>
+                </tr>
+              ))}
+              {cap.adjustments.length === 0 && (<tr><td colSpan={4} className="hint">No scheduled changes — capacity stays at the base.</td></tr>)}
+            </tbody>
+          </table>
+          <div className="apply-bar" style={{ marginTop: 6 }}>
+            <button className="btn" onClick={addCapAdj}>Add change</button>
+            <button className="btn primary" disabled={!capDirty} onClick={applyCapacity}>Apply schedule</button>
+            <span className="hint">{capDirty ? 'Staged — not yet applied.' : capApplied ? 'Applied.' : 'Changes flow to the capacity line and tiles.'}</span>
+          </div>
         </div>
       )}
 
       <div className="card">
-        <div className="card-title">
-          Load over time — {drilled ? 'by project' : 'by team'}
-          <span className="th-unit" style={{ marginLeft: 8 }}>{chart.mode === 'raw' ? 'job-level steps' : 'daily mean concurrency'}</span>
-        </div>
         <div style={{ width: '100%', height: 330 }}>
           <ResponsiveContainer>
-            <AreaChart data={chart.rows} margin={{ top: 20, right: 14, left: 8, bottom: 4 }}
+            <AreaChart data={chartRows} margin={{ top: 20, right: 14, left: 8, bottom: 4 }}
               onMouseDown={(e) => { if (e && e.activeLabel != null) { dragRef.current = { a: e.activeLabel, b: e.activeLabel }; setDragSel({ a: e.activeLabel, b: e.activeLabel }) } }}
               onMouseMove={(e) => { if (dragRef.current && e && e.activeLabel != null) { dragRef.current.b = e.activeLabel; setDragSel({ a: dragRef.current.a, b: e.activeLabel }) } }}
               onMouseUp={() => { const d = dragRef.current; dragRef.current = null; setDragSel(null); if (d) { const a = Math.min(d.a, d.b), b = Math.max(d.a, d.b); setSel(b - a > 30 * 60 * 1000 ? { a, b } : null) } }}
@@ -315,109 +415,181 @@ export default function ConsumptionReservations() {
               <CartesianGrid stroke="var(--grid)" vertical={false} />
               <XAxis dataKey="t" type="number" scale="time" domain={[t0, fEnd]} ticks={ticks} tick={{ fill: 'var(--ink-2)', fontSize: 11 }}
                 tickLine={false} axisLine={{ stroke: 'var(--line)' }} tickFormatter={tickFmt} />
-              <YAxis tick={{ fill: 'var(--muted)', fontSize: 12 }} tickLine={false} axisLine={false} width={54}
-                tickFormatter={(v) => (yUnit === 'pct' ? Math.round((v / capGpus) * 100) + '%' : fmt(v))}
-                label={{ value: yUnit === 'pct' ? '% capacity' : 'GPUs', angle: -90, position: 'insideLeft', fill: 'var(--muted)', fontSize: 11 }} />
-              <Tooltip content={<ChartTooltip colourByKey={colourByKey} yUnit={yUnit} capGpus={capGpus} />} cursor={{ stroke: 'var(--ink-2)', strokeWidth: 1 }} />
-              {fcOn && fEnd > period.nowMs && (
-                <ReferenceArea x1={period.nowMs} x2={fEnd} fill="var(--ink-2)" fillOpacity={0.12} />
+              <YAxis yAxisId="gpu" domain={[0, yMax]} tick={{ fill: 'var(--muted)', fontSize: 12 }} tickLine={false} axisLine={false} width={54}
+                tickFormatter={(v) => fmt(v)} label={{ value: 'GPUs', angle: -90, position: 'insideLeft', fill: 'var(--muted)', fontSize: 11 }} />
+              <YAxis yAxisId="pct" orientation="right" domain={[0, yMax]} tick={{ fill: 'var(--muted)', fontSize: 12 }} tickLine={false} axisLine={false} width={48}
+                tickFormatter={(v) => Math.round((v / (capGpus || 1)) * 100) + '%'} label={{ value: '% of capacity', angle: 90, position: 'insideRight', fill: 'var(--muted)', fontSize: 11 }} />
+              <Tooltip content={<ChartTooltip colourByKey={colourByKey} capGpus={capGpus} />} cursor={{ stroke: 'var(--ink-2)', strokeWidth: 1 }} />
+              {fEnd > period.nowMs && (
+                <ReferenceArea yAxisId="gpu" x1={period.nowMs} x2={fEnd} fill="var(--ink-2)" fillOpacity={0.08} />
               )}
+              {/* reservations first, so they sit at the bottom of each bucket's stack; jobs drape over.
+                  No stroke: a dashed outline on every bucket's (often zero-height) reservation layer
+                  draws stray horizontal lines across the chart. Reservations read as the lighter band. */}
               {chart.units.map((u) => (
-                <Area key={u.key} type="stepAfter" dataKey={u.key} name={u.key} stackId="load"
+                <Area key={u.key + '_r'} yAxisId="gpu" type="stepAfter" dataKey={u.key + RESV_SFX} name={u.key + ' · reserved'} stackId="load"
+                  stroke="none" fill={u.colour} fillOpacity={0.5} activeDot={false} isAnimationActive={false} connectNulls />
+              ))}
+              {chart.units.map((u) => (
+                <Area key={u.key} yAxisId="gpu" type="stepAfter" dataKey={u.key} name={u.key} stackId="load"
                   stroke="var(--surface)" strokeWidth={0.4} fill={u.colour} fillOpacity={0.95} activeDot={false} isAnimationActive={false} connectNulls />
               ))}
-              <ReferenceLine y={capGpus} stroke="var(--ink-2)" strokeDasharray="4 4" label={{ value: 'capacity', fill: 'var(--muted)', fontSize: 11, position: 'insideBottomRight' }} />
-              {resvViz.map((r) => (
-                <ReferenceArea key={r.id} x1={Math.max(r.startMs, t0)} x2={Math.min(r.endMs, fEnd)} y1={0} y2={r.gpus}
-                  fill={r.colour} fillOpacity={0.9} stroke="var(--surface)" strokeWidth={1} />
-              ))}
+              {/* capacity line, bound to the right (%) axis so that axis always renders; hidden when drilled */}
+              <Area yAxisId="pct" type="stepAfter" dataKey="cap" stroke={drilled ? 'none' : 'var(--ink-2)'} strokeWidth={1.5} strokeDasharray="4 4" fill="none" dot={false} activeDot={false} isAnimationActive={false} legendType="none" name="capacity" />
               {sel && !dragSel && (
-                <ReferenceArea x1={sel.a} x2={sel.b} fill="var(--accent)" fillOpacity={0.1} stroke="var(--accent)" strokeOpacity={0.5} strokeWidth={1} />
+                <ReferenceArea yAxisId="gpu" x1={sel.a} x2={sel.b} fill="var(--accent)" fillOpacity={0.1} stroke="var(--accent)" strokeOpacity={0.5} strokeWidth={1} />
               )}
               {dragSel && (
-                <ReferenceArea x1={Math.min(dragSel.a, dragSel.b)} x2={Math.max(dragSel.a, dragSel.b)} fill="var(--accent)" fillOpacity={0.18} />
+                <ReferenceArea yAxisId="gpu" x1={Math.min(dragSel.a, dragSel.b)} x2={Math.max(dragSel.a, dragSel.b)} fill="var(--accent)" fillOpacity={0.18} />
               )}
               {fEnd > period.nowMs && t0 < period.nowMs && (
-                <ReferenceLine x={period.nowMs} stroke="var(--ink)" strokeWidth={2} label={{ value: 'now', fill: 'var(--ink)', fontSize: 11, fontWeight: 600, position: 'top' }} />
+                <ReferenceLine yAxisId="gpu" x={period.nowMs} stroke="var(--ink)" strokeWidth={2} label={{ value: 'now', fill: 'var(--ink)', fontSize: 11, fontWeight: 600, position: 'top' }} />
               )}
             </AreaChart>
           </ResponsiveContainer>
         </div>
-        <div style={{ width: '100%', height: 56 }}>
-          <ResponsiveContainer>
-            <AreaChart data={overviewRows} margin={{ top: 2, right: 14, left: 8, bottom: 0 }}>
-              <XAxis dataKey="t" type="number" domain={[period.startMs, period.endMs]} hide />
-              <YAxis hide domain={[0, capGpus]} />
-              <Area type="stepAfter" dataKey="load" stroke="none" fill="var(--ink-2)" fillOpacity={0.3} isAnimationActive={false} />
-              <ReferenceLine x={period.nowMs} stroke="var(--ink-2)" strokeDasharray="2 2" />
-              <Brush dataKey="t" height={28} travellerWidth={9} stroke="var(--accent)" fill="var(--surface)" tickFormatter={fmtDay}
-                startIndex={navStart} endIndex={navEnd} onChange={onNav} />
-            </AreaChart>
-          </ResponsiveContainer>
+        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--ink-2)', marginTop: 4 }}>
+          <span>{fmtDay(period.startMs)}</span><span>{fmtDay(period.endMs)}</span>
         </div>
-        <p className="hint" style={{ marginTop: 2 }}>
-          Drag the strip to move or resize the visible window across the full timeline
-          (May 2025 – Dec 2026). Drag directly on the chart above to select a period for the tables.
-        </p>
-        <div className="legend-grouped"><div className="lg-row">
+        <Navigator rows={overviewRows} startMs={period.startMs} endMs={period.endMs} nowMs={period.nowMs}
+          t0={t0} t1={fEnd} capGpus={capGpus} reservations={resvNav}
+          onChange={(a, b) => setViewWin({ t0: a, fEnd: b })} />
+        <div className="legend-grouped" style={{ marginTop: 8 }}><div className="lg-row">
           {chart.units.map((u) => <span className="lg-item" key={u.key}><i className="swatch" style={{ background: u.colour }} />{u.key}</span>)}
         </div></div>
-        <p className="note">
-          Each step is a job starting or ending. Actuals are drawn as steps with no
-          smoothing between known points; right of the “now” line is forecast. Wide ranges
-          switch to a daily mean so the picture stays legible; zoom in (7d, Today) for the
-          job-level detail. Reservations show as solid blocks in their team’s colour.
-        </p>
+        <div className="controls" style={{ marginTop: 10, marginBottom: 0 }}>
+          <label>Scope</label>
+          <ScopePicker value={scope} onChange={setScope} />
+          <label style={{ marginLeft: 8 }}>Range</label>
+          <div className="seg">
+            <button className={range === 'today' ? 'active' : ''} onClick={() => setRange('today')}>Today</button>
+            <button className={range === '7d' ? 'active' : ''} onClick={() => setRange('7d')}>7d</button>
+            <button className={range === '30d' ? 'active' : ''} onClick={() => setRange('30d')}>30d</button>
+            <button className={range === '90d' ? 'active' : ''} onClick={() => setRange('90d')}>90d</button>
+            <button className={range === 'total' ? 'active' : ''} onClick={() => setRange('total')}>Total</button>
+            <button className={range === 'custom' ? 'active' : ''} onClick={() => setRange('custom')}>Custom</button>
+          </div>
+          {range === 'custom' && (<>
+            <input type="date" value={custom.from} onChange={(e) => setCustom((c) => ({ ...c, from: e.target.value }))} />
+            <span className="hint">to</span>
+            <input type="date" value={custom.to} onChange={(e) => setCustom((c) => ({ ...c, to: e.target.value }))} />
+          </>)}
+        </div>
       </div>
 
       <div className="card">
         <div className="card-title" style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
-          <span>Projects — {selLabel} <span className="th-unit">{projRows.length} shown</span></span>
+          <span>Projects — {selLabel} <span className="th-unit">{projRows.length} team projects · personal work below</span><InfoTip text="Drag over the chart to pick a time window; with none, this shows projects active now. With a window selected, Budget, Used and Left are for that window; otherwise they are each project’s total. Select a row to scope the chart to that project. Budget status flags a project already over its budget; projected over-runs to each project’s end are in Analytics. Personal work is individual, best-effort work from the person pool; the group meter is total personal use against the total personal budget." /></span>
+          <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
+            <div className="seg">
+              <button className={projView === 'grouped' ? 'active' : ''} onClick={() => setProjView('grouped')}>By team</button>
+              <button className={projView === 'flat' ? 'active' : ''} onClick={() => setProjView('flat')}>All projects</button>
+            </div>
+            {projView === 'grouped' && <>
+              <button className="btn" onClick={() => setOpenGroups(new Set(projGroups.map((g) => g.key)))}>Expand all</button>
+              <button className="btn" onClick={() => setOpenGroups(new Set())}>Collapse all</button>
+            </>}
+          </span>
         </div>
-        <p className="hint" style={{ marginTop: 0 }}>
-          Drag over the chart to pick a time window; with none, this shows projects active
-          now. With a window selected, Budget, Used and Left are for that window; otherwise
-          they are each project’s total. {sel && <button className="linkbtn" onClick={() => setSel(null)}>Clear selection</button>}
-          {' '}Select a row to scope the chart to that project.
-          {drilled && <> <button className="linkbtn" onClick={() => setScope('all')}>Back to all teams</button></>}
-        </p>
+        {(sel || drilled) && (
+          <p className="hint" style={{ marginTop: 0 }}>
+            {sel && <button className="linkbtn" onClick={() => setSel(null)}>Clear selection</button>}
+            {sel && drilled && ' · '}
+            {drilled && <button className="linkbtn" onClick={() => setScope('all')}>Back to all teams</button>}
+          </p>
+        )}
+        {projView === 'flat' ? (
+          <div className="tbl-scroll">
+            <DataTable onRowClick={rowClick} selectedId={selId} initialSort={{ key: 'used', dir: 'desc' }} columns={projColumns} rows={projRows} colWidths={PROJ_COLW} />
+          </div>
+        ) : (
         <div className="tbl-scroll">
-          <DataTable
-            onRowClick={(p) => setScope('project:' + p.id)}
-            selectedId={scope.startsWith('project:') ? scope.split(':')[1] : null}
-            initialSort={{ key: 'used', dir: 'desc' }}
-            columns={[
-              { key: 'name', label: 'Project', render: (p) => (p.funding === 'person' ? <span className="tag">personal</span> : p.name) },
-              { key: 'owner', label: 'Owner', sortValue: (p) => projectOwner(p), render: (p) => projectOwner(p) },
-              { key: 'state', label: 'State', sortValue: (p) => projectState(p), render: (p) => <StateTag p={p} /> },
-              { key: 'budget', label: 'Budget', num: true, sortValue: (p) => winBudget(p), render: (p) => fmt(winBudget(p)) },
-              { key: 'used', label: 'Used', num: true, sortValue: (p) => winUsed(p), render: (p) => fmt(winUsed(p)) },
-              { key: 'left', label: 'Left', num: true, sortValue: (p) => winLeft(p), render: (p) => fmt(winLeft(p)) },
-              { key: 'prog', label: 'Consumption', sortable: false, render: (p) => { const b = winBudget(p) || 1; const pc = Math.min(100, (winUsed(p) / b) * 100); return (<div className="meter" title={`${Math.round((winUsed(p) / b) * 100)}%`}><span style={{ width: pc + '%' }} /></div>) } },
-              { key: 'fc', label: <>Forecast use <InfoTip text="Projected consumption to the project's end, capped at its budget." /></>, num: true, thClass: 'fc-col fc-first', tdClass: 'fc-col fc-first', sortValue: (p) => fEndUse(p, fcMethod), render: (p) => fmt(fEndUse(p, fcMethod)) },
-              { key: 'demand', label: <>Demand <InfoTip text="Same projection uncapped; can exceed the budget." /></>, num: true, thClass: 'fc-col', tdClass: 'fc-col', sortValue: (p) => demandEnd(p, fcMethod), render: (p) => fmt(demandEnd(p, fcMethod)) },
-              { key: 'diff', label: <>Difference <InfoTip text="Projected demand minus budget at the project's end. Positive is over budget (red), negative is under (green)." /></>, num: true, thClass: 'fc-col', tdClass: 'fc-col', sortValue: (p) => demandEnd(p, fcMethod) - p.budget, render: (p) => { const d = Math.round(demandEnd(p, fcMethod) - p.budget); const pc = Math.round((d / p.budget) * 100); if (d > 0) return <span className="tag warn">+{fmt(d)} (+{pc}%)</span>; if (d < 0) return <span className="tag ok">{fmt(d)} ({pc}%)</span>; return <span className="hint">0</span> } },
-              { key: 'runs', label: 'Budget runs out', thClass: 'fc-col', tdClass: 'fc-col', sortValue: (p) => runsOut(p, fcMethod) ?? Infinity, render: (p) => { const d = runsOut(p, fcMethod); return d ? <span className="tag warn">~{fmtDay(d)}</span> : <span className="hint">within budget</span> } },
-            ]}
-            rows={projRows}
-          />
+          {projGroups.map((g) => {
+            const open = openGroups.has(g.key)
+            const gUsed = g.rows.reduce((s, p) => s + winUsed(p), 0)
+            const gBudget = g.rows.reduce((s, p) => s + winBudget(p), 0)
+            const gPct = gBudget ? Math.round((gUsed / gBudget) * 100) : 0
+            return (
+              <div className="proj-group" key={g.key}>
+                <button className="other-head" style={{ minWidth: PROJ_COLW_TOTAL }} onClick={() => toggleGroup(g.key)}>
+                  <span className="oh-label">
+                    <span className="acc-chev">{open ? '▾' : '▸'}</span>
+                    <i style={{ display: 'inline-block', width: 11, height: 11, borderRadius: 3, background: g.colour, margin: '0 8px 0 2px', flex: '0 0 auto' }} />
+                    <b>{g.name}</b>
+                    <span className="th-unit" style={{ marginLeft: 8 }}>{g.rows.length} project{g.rows.length === 1 ? '' : 's'}</span>
+                  </span>
+                  <span className="meter" title={`${fmt(gUsed)} / ${fmt(gBudget)} GPU-h · ${gPct}% of budget used`} style={{ width: 200, flex: '0 0 auto' }}>
+                    <span style={{ width: Math.min(100, gPct) + '%', background: g.colour }} />
+                  </span>
+                </button>
+                {open && <DataTable onRowClick={rowClick} selectedId={selId} initialSort={{ key: 'used', dir: 'desc' }} columns={projColumns} rows={g.rows} colWidths={PROJ_COLW} />}
+              </div>
+            )
+          })}
         </div>
-        <p className="hint">
-          The shaded columns are forecast to each project’s end from its recent job rate.
-          <b> Forecast use</b> is capped at the budget; <b>Demand</b> is uncapped, so
-          <b> Difference</b> is projected demand minus budget: over budget in red, under in green.
-        </p>
+        )}
+
+        {/* personal work: one more group at the bottom, with an aggregate use-of-budget meter */}
+        {(() => {
+          const pPct = personBudgetTotal ? Math.round((personUsed / personBudgetTotal) * 100) : 0
+          const pOver = personUsed > personBudgetTotal
+          return (
+            <div className="proj-group" style={{ marginTop: 4 }}>
+              <button className="other-head" style={{ minWidth: PROJ_COLW_TOTAL }} onClick={() => setPersonOpen((o) => !o)}>
+                <span className="oh-label">
+                  <span className="acc-chev">{personOpen ? '▾' : '▸'}</span>
+                  <i style={{ display: 'inline-block', width: 11, height: 11, borderRadius: 3, background: bucketColour('Personal'), margin: '0 8px 0 2px', flex: '0 0 auto' }} />
+                  <b>Personal</b>
+                  <span className="th-unit" style={{ marginLeft: 8 }}>{personPeople.length} people</span>
+                </span>
+                <span className="meter" title={`${fmt(personUsed)} / ${fmt(personBudgetTotal)} GPU-h · ${pPct}% of the person pool used`} style={{ width: 200, flex: '0 0 auto' }}>
+                  <span style={{ width: Math.min(100, pPct) + '%', background: pOver ? 'var(--warning)' : bucketColour('Personal') }} />
+                </span>
+              </button>
+              {personOpen && (
+                <DataTable
+                  initialSort={{ key: 'used', dir: 'desc' }}
+                  colWidths={[210, 150, 230, 130]}
+                  columns={[
+                    { key: 'name', label: 'Person', sortValue: (r) => r.name, render: (r) => r.name },
+                    { key: 'team', label: 'Home team', sortValue: (r) => r.team, render: (r) => <span className="hint">{r.team}</span> },
+                    { key: 'used', label: <>Used <span className="th-unit">of budget</span></>, sortValue: (r) => r.used, render: (r) => {
+                      const frac = r.budget > 0 ? r.used / r.budget : 0
+                      const over = frac > 1
+                      return (
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, width: 210 }} title={Math.round(frac * 100) + '% of budget'}>
+                          <span className="meter" style={{ flex: 1 }}><span style={{ width: Math.min(1, frac) * 100 + '%', background: over ? 'var(--warning)' : 'var(--good)' }} /></span>
+                          <span style={{ width: 70, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{fmt(r.used)}</span>
+                        </span>
+                      )
+                    } },
+                    { key: 'running', label: 'Running now', num: true, sortValue: (r) => r.running, render: (r) => r.running ? <span className="tag ok">{fmt(r.running)} GPU</span> : <span className="hint">—</span> },
+                  ]}
+                  rows={personPeople}
+                />
+              )}
+            </div>
+          )
+        })()}
       </div>
 
       <div className="card">
-        <div className="card-title">Reservations — {selLabel} <span className="th-unit">{resvRows.length} shown</span></div>
+        <div className="card-title">Reservations — {resvLabel} <span className="th-unit">{resvRows.length} shown</span><InfoTip text="Reservations overlapping the window shown above (pan or resize the strip to change it). Operations, the holding team’s lead, or the project lead can Cancel one; the GPUs it held return to the pool for scheduling." /></div>
         <DataTable
           initialSort={{ key: 'start', dir: 'asc' }}
           columns={[
-            { key: 'start', label: 'Window', sortValue: (r) => r.startMs, render: (r) => `${fmtDay(r.startMs)} – ${fmtDay(r.endMs)}` },
+            { key: 'team', label: 'Team', sortValue: (r) => projTeam(r.projectId).name, render: (r) => { const t = projTeam(r.projectId); return <span style={{ display: 'inline-flex', alignItems: 'center', gap: 7 }}><i style={{ display: 'inline-block', width: 10, height: 10, borderRadius: 2, background: t.colour, flex: '0 0 auto' }} />{t.name}</span> } },
             { key: 'project', label: 'Project', sortValue: (r) => projName(r.projectId), render: (r) => projName(r.projectId) },
-            { key: 'label', label: 'What' },
+            { key: 'label', label: 'Description' },
+            { key: 'start', label: 'Window', sortValue: (r) => r.startMs, render: (r) => `${fmtDay(r.startMs)} – ${fmtDay(r.endMs)}` },
             { key: 'gpus', label: 'GPUs', num: true },
+            { key: 'bookedBy', label: 'Booked by', sortValue: (r) => r.bookedBy || '', render: (r) => r.bookedBy || '—' },
+            { key: 'approvedBy', label: 'Approved by', sortValue: (r) => r.approvedBy || '', render: (r) => r.approvedBy || '—' },
+            { key: 'act', label: 'Action', sortable: false, render: (r) => {
+              if (r.endMs < period.nowMs) return <span className="hint">ended</span>
+              if (canCancelResv(r)) return <button className="btn" style={{ padding: '2px 8px' }} onClick={() => cancelResv(r.id)}>Cancel</button>
+              return <span className="hint" title="Only operations, the holding team's lead, or the project lead can cancel">—</span>
+            } },
           ]}
           rows={resvRows}
         />
@@ -426,17 +598,16 @@ export default function ConsumptionReservations() {
   )
 }
 
-// forecast helpers for the table (per project, to its own end)
-function daysToEnd(p) { return Math.max(0, (Math.min(p.endMs, period.endMs) - period.nowMs) / DAY) }
-function demandEnd(p, m) { return Math.round(p.used + projRate(p, m) * daysToEnd(p)) }
-function fEndUse(p, m) { return Math.round(Math.min(p.budget, p.used + projRate(p, m) * daysToEnd(p))) }
-function runsOut(p, m) {
-  const rate = projRate(p, m)
-  if (rate <= 0 || p.used >= p.budget) return null
-  const d = period.nowMs + ((p.budget - p.used) / rate) * DAY
-  return d <= Math.min(p.endMs, period.endMs) ? d : null
-}
 function projName(id) { return projects.find((p) => p.id === id)?.name ?? id }
+// team name + swatch colour for a reservation's project, stable regardless of chart scope
+function projTeam(id) {
+  const p = projects.find((pp) => pp.id === id)
+  if (!p) return { name: '—', colour: '#888' }
+  if (p.funding === 'person') return { name: 'Personal', colour: bucketColour('Personal') }
+  if (!p.teamId) return { name: 'Organisation', colour: bucketColour('No team') }
+  const name = teamById(p.teamId)?.name || 'team'
+  return { name, colour: bucketColour(name) }
+}
 
 function StateTag({ p }) {
   const s = projectState(p)

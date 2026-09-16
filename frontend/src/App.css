@@ -88,6 +88,18 @@
   border-bottom-color: var(--accent);
   font-weight: 600;
 }
+/* one consistent role-colour system used everywhere a role is badged:
+   ops = orange, team lead = blue, project lead = violet, viewer = grey */
+.rolechip {
+  display: inline-block; margin-left: 6px; font-size: 9.5px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.04em; border-radius: 5px; padding: 1px 5px;
+  vertical-align: middle; line-height: 1.4; white-space: nowrap;
+}
+.rolechip.ops { color: var(--warning); background: color-mix(in srgb, var(--warning) 15%, transparent); }
+.rolechip.lead { color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.rolechip.projlead { color: #8b5cf6; background: color-mix(in srgb, #8b5cf6 16%, transparent); }
+.rolechip.viewer { color: var(--muted); background: color-mix(in srgb, var(--muted) 16%, transparent); }
+.row-expand > td { background: color-mix(in srgb, var(--accent) 4%, transparent); }
 
 /* content */
 .content {
@@ -105,7 +117,7 @@
 /* shared view pieces */
 .view-head { margin-bottom: 18px; }
 .view-title { font-size: 17px; font-weight: 600; }
-.view-intro { color: var(--ink-2); margin: 6px 0 0; max-width: 70ch; }
+.view-intro { color: var(--ink-2); margin: 6px 0 0; }
 
 .card {
   background: var(--surface);
@@ -373,6 +385,76 @@ table.data tr:last-child td { border-bottom: none; }
   text-decoration: underline;
 }
 
+/* request form */
+.reqform { display: flex; flex-direction: column; gap: 10px; max-width: 680px; margin-top: 6px; }
+.reqrow { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.reqrow > label { width: 96px; color: var(--ink-2); font-size: 13px; }
+.reqform input[type="text"], .reqform input:not([type]), .reqform input[type="date"], .reqform select {
+  background: var(--surface); color: var(--ink); border: 1px solid var(--border);
+  border-radius: 7px; padding: 5px 8px; font-size: 13px;
+}
+.reqform input:focus, .reqform select:focus { outline: none; border-color: var(--accent); }
+
+/* team projects summary */
+.team-projects { margin: 0 0 10px; font-size: 13px; color: var(--ink); line-height: 1.5; }
+.team-projects .tp-label { font-weight: 600; color: var(--ink-2); }
+
+/* expandable team groups in the projects table */
+.data-fixed { table-layout: fixed; }
+.data-fixed td, .data-fixed th { overflow-wrap: break-word; }
+.proj-group { margin: 0; }
+.proj-group:first-child .other-head { border-top: none; }
+.other-head { display: flex; align-items: center; gap: 2px; width: 100%; text-align: left; background: var(--bg); border: none; border-top: 1px solid var(--border); color: var(--ink-2); font-size: 13px; padding: 9px 6px; cursor: pointer; }
+.other-head:hover { color: var(--ink); }
+.other-head b { color: var(--ink); font-size: 14px; }
+.other-head .acc-chev { color: var(--ink-2); }
+.oh-label { flex: 0 0 300px; display: inline-flex; align-items: center; gap: 2px; overflow: hidden; }
+
+/* overview: governance stepper */
+.gov-steps { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 4px; }
+.gov-step { flex: 1 1 150px; min-width: 140px; text-align: left; display: flex; flex-direction: column; gap: 2px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; cursor: default; color: var(--ink-2); }
+.gov-step:not(:disabled) { cursor: pointer; }
+.gov-step .gov-n { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 50%; background: var(--border); color: var(--ink); font-size: 12px; font-weight: 600; }
+.gov-step .gov-name { color: var(--ink); font-weight: 600; font-size: 13px; }
+.gov-step .gov-short { font-size: 11px; color: var(--ink-2); }
+.gov-step.done { opacity: 0.8; }
+.gov-step.done .gov-n { background: var(--accent); color: #fff; }
+.gov-step.cur { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.gov-step.cur .gov-n { background: var(--accent); color: #fff; }
+
+/* overview: compact roll-out phase row */
+.gov-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.gov-row:hover { border-color: var(--accent); }
+.gov-row-main { display: flex; align-items: center; gap: 10px; }
+
+/* overview: attention list */
+.attn { list-style: none; margin: 0; padding: 0; }
+.attn-row { display: flex; align-items: center; gap: 10px; padding: 9px 6px; border-top: 1px solid var(--border); cursor: pointer; }
+.attn-row:first-child { border-top: none; }
+.attn-row:hover { background: var(--bg); }
+.attn-dot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; }
+.attn-dot.attn-warn { background: #e6a53a; }
+.attn-dot.attn-info { background: var(--accent); }
+.attn-text { flex: 1; font-size: 13px; }
+.attn-go { color: var(--ink-2); font-size: 18px; }
+.tile-click { cursor: pointer; }
+.tile-click:hover { border-color: var(--accent); }
+
+/* connectors */
+.conn-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px 16px; margin-top: 4px; }
+.conn-field { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--ink-2); }
+.conn-field > span { font-weight: 500; }
+.conn-field select, .conn-field input { background: var(--bg); color: var(--ink); border: 1px solid var(--border); border-radius: 6px; padding: 5px 8px; font-size: 13px; width: 100%; box-sizing: border-box; }
+.conn-field input:disabled, .conn-field select:disabled { opacity: 0.7; }
+.conn-input { position: relative; display: flex; align-items: center; }
+.conn-input input { flex: 1; }
+.conn-suffix { position: absolute; right: 8px; color: var(--ink-2); font-size: 12px; pointer-events: none; }
+
+/* capacity schedule editor */
+.capsched { width: 100%; margin-top: 6px; font-size: 13px; }
+.capsched td, .capsched th { padding: 4px 8px; }
+.capsched input, .capsched select { background: var(--bg); color: var(--ink); border: 1px solid var(--border); border-radius: 6px; padding: 3px 6px; font-size: 13px; }
+
 /* inline edit bar (e.g. headroom on Consumption) */
 .editbar {
   display: flex;
@@ -624,3 +706,87 @@ code {
 }
 .acc-body .subhead:first-child { margin-top: 8px; }
 .members { color: var(--ink-2); font-size: 13px; margin: 2px 0 4px; line-height: 1.7; }
+
+/* --- pool split (Budgets: person pool vs projects pool) --- */
+.pool-split {
+  display: flex;
+  width: 100%;
+  height: 58px;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  margin: 4px 0 10px;
+}
+.pool-seg {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 0 12px;
+  min-width: 0;
+  overflow: hidden;
+  color: #fff;
+  white-space: nowrap;
+}
+.pool-seg b { font-size: 13px; font-weight: 600; }
+.pool-seg span { font-size: 12px; opacity: 0.92; overflow: hidden; text-overflow: ellipsis; }
+.pool-seg.projects { background: var(--accent); }
+.pool-seg.person { background: #9085e9; }
+.pool-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  color: var(--ink-2);
+  font-size: 12.5px;
+  margin-bottom: 12px;
+}
+.pool-kpi {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.pool-kpi-item {
+  background: var(--page);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+.pool-kpi-item .tile-value { font-size: 22px; font-weight: 600; margin-top: 2px; }
+@media (max-width: 720px) { .pool-kpi { grid-template-columns: 1fr; } }
+
+/* --- consumption vs target bars (Overview) --- */
+.pool-2bars { display: flex; flex-direction: column; gap: 8px; margin: 4px 0 12px; }
+.pool-barrow { display: flex; align-items: center; gap: 10px; }
+.pool-barlabel { width: 74px; flex: 0 0 auto; color: var(--ink-2); font-size: 12.5px; text-align: right; }
+.pool-split.sm { height: 30px; margin: 0; flex: 1; }
+.pool-split.sm .pool-seg { padding: 0 8px; }
+.pool-split.sm .pool-seg span { font-size: 11px; opacity: 1; }
+.pool-split.sm .pool-seg b { display: none; }
+.pool-legend { display: flex; flex-wrap: wrap; gap: 6px 18px; margin-bottom: 10px; font-size: 12.5px; }
+.pool-legend-item { display: inline-flex; align-items: center; gap: 6px; }
+.pool-legend-item i { width: 10px; height: 10px; border-radius: 2px; display: inline-block; flex: 0 0 auto; }
+
+/* empty tail on the pool bars: capacity not used (idle) or not committed (uncommitted) */
+.pool-split .pool-seg.pool-empty {
+  background: repeating-linear-gradient(-45deg, var(--grid), var(--grid) 6px, transparent 6px, transparent 12px);
+  color: var(--ink-2);
+  border-left: 1px solid var(--border);
+}
+.pool-split.sm .pool-seg.pool-empty span { font-size: 10.5px; color: var(--ink-2); }
+/* capacity mark on the committed bar: budgets to its right are over-committed */
+.pool-cap-tick { position: absolute; top: -2px; bottom: -2px; width: 2px; background: var(--critical); z-index: 2; }
+.pool-cap-tick::after { content: 'capacity'; position: absolute; top: -14px; left: 3px; font-size: 10px; color: var(--critical); white-space: nowrap; }
+
+/* People: comma-separated member list with lead chips */
+.member-list { line-height: 2.1; margin: 2px 0 0; }
+.member-list .member { white-space: nowrap; }
+.tag.chip { margin-left: 4px; padding: 0 5px; font-size: 10px; vertical-align: middle; }
+
+/* pace bar (Analytics plan vs actual): diverging around on-pace, right=faster, left=slower */
+.pacebar-track { position: relative; display: inline-block; width: 120px; height: 12px; background: var(--page); border: 1px solid var(--border); border-radius: 3px; vertical-align: middle; }
+.pacebar-center { position: absolute; left: 50%; top: -2px; bottom: -2px; width: 1px; background: var(--line); }
+.pacebar-fill { position: absolute; top: 1px; bottom: 1px; border-radius: 2px; }
+.pacebar-fill.fast { background: var(--warning); }
+.pacebar-fill.slow { background: var(--muted); }
