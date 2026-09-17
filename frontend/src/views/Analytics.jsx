@@ -1,4 +1,4 @@
-// Analytics tab: operations overview, indicator explorer, resource outlook, and scorecard.
+// Overview tab: operations dashboard, indicator explorer, resource outlook, and scorecard.
 import { useState, useEffect, useMemo } from 'react'
 import {
   LineChart, Line, Area, ComposedChart, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine,

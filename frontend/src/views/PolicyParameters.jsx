@@ -1,7 +1,8 @@
-// Policy tab: roll-out phase, mechanisms, and parameter values (operations only).
+// Policy tab: roll-out phase, mechanisms, and parameter values. Visible to all
+// roles, read-only for everyone but operations.
 import { useState } from 'react'
 import { fmt } from '../format.js'
-import Toggle from '../components/Toggle.jsx'
+import Mechanisms from '../components/Mechanisms.jsx'
 import { parameters, GOV_PHASES, governance, suggestedPersonBudget, poolBars } from '../data/mockData.js'
 import { useSession } from '../session.jsx'
 
@@ -98,34 +99,23 @@ export default function PolicyParameters() {
 
   return (
     <section>
-      {editable && (
-        <div className="card">
-          <div className="card-title">Roll-out phase <span className="rolechip ops">ops</span></div>
-          <div className="gov-steps">
-            {GOV_PHASES.map((g) => (
-              <button key={g.key} type="button" className={'gov-step' + (g.n === phase ? ' cur' : g.n < phase ? ' done' : '')}
-                onClick={() => setGovPhase(g.n)}>
-                <span className="gov-n">{g.n}</span>
-                <span className="gov-name">{g.name}</span>
-                <span className="gov-short">{g.short}</span>
-              </button>
-            ))}
-          </div>
+      <div className="card">
+        <div className="card-title">Roll-out phase {editable ? <span className="rolechip ops">ops</span> : <span className="th-unit">read only</span>}</div>
+        <div className="gov-steps">
+          {GOV_PHASES.map((g) => (
+            <button key={g.key} type="button" disabled={!editable} className={'gov-step' + (g.n === phase ? ' cur' : g.n < phase ? ' done' : '')}
+              onClick={() => setGovPhase(g.n)}>
+              <span className="gov-n">{g.n}</span>
+              <span className="gov-name">{g.name}</span>
+              <span className="gov-short">{g.short}</span>
+            </button>
+          ))}
         </div>
-      )}
+      </div>
 
       <div className="card">
         <div className="card-title">Mechanisms <span className="th-unit">{custom ? 'customised' : `phase ${phase} preset`}</span></div>
-        <table className="data">
-          <tbody>
-            <SwitchRow name="Person budgets" note="cap each person at their budget" checked={flags.enfPerson} disabled={!editable} onChange={(v) => setFlags((s) => ({ ...s, enfPerson: v }))} />
-            <SwitchRow name="Project budgets" note="cap each project at its budget" checked={flags.enfProject} disabled={!editable} onChange={(v) => setFlags((s) => ({ ...s, enfProject: v }))} />
-            <SwitchRow name="Team budgets" note="cap each team pool" checked={flags.enfTeam} disabled={!editable} onChange={(v) => setFlags((s) => ({ ...s, enfTeam: v }))} />
-            <SwitchRow name="Priced urgency (lanes)" note="fast and bulk lanes available to jobs" checked={flags.lanes} disabled={!editable} onChange={(v) => setFlags((s) => ({ ...s, lanes: v }))} />
-            <SwitchRow name="Time-of-use weighting" note="office/off-hours weight on budget drawn" checked={flags.timeOfUse} disabled={!editable} onChange={(v) => setFlags((s) => ({ ...s, timeOfUse: v }))} />
-            <SwitchRow name="Cross-team standing" note="team-level standing in the queue" checked={flags.teamStanding} disabled={!editable} onChange={(v) => setFlags((s) => ({ ...s, teamStanding: v }))} />
-          </tbody>
-        </table>
+        <Mechanisms flags={flags} editable={editable} onToggle={(k, v) => setFlags((s) => ({ ...s, [k]: v }))} />
       </div>
 
       <div className="card">
@@ -198,16 +188,6 @@ function ValueRow({ label, k, draft, editable, step, suffix, onChange, note, dec
           : draft[k].toFixed(decimals) + (suffix || '')}
       </td>
       <td style={{ color: 'var(--ink-2)' }}>{note}</td>
-    </tr>
-  )
-}
-
-function SwitchRow({ name, note, checked, onChange, disabled }) {
-  return (
-    <tr>
-      <td style={{ width: '26%' }}>{name}</td>
-      <td style={{ color: 'var(--ink-2)' }}>{note}</td>
-      <td style={{ width: 60, textAlign: 'right' }}><Toggle checked={checked} onChange={onChange} label={name} disabled={disabled} /></td>
     </tr>
   )
 }

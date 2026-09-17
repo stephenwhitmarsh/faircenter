@@ -17,6 +17,7 @@ import { period, leads, opsPeople, members, projectLeads, projectsLedBy, project
 import { SessionProvider, useSession, actorFor, RoleChip } from './session.jsx'
 
 const TABS = [
+  { id: 'analytics', label: 'Overview', component: Analytics, opsOnly: true },
   { id: 'me', label: 'My view', component: Me },
   { id: 'team', label: 'Team', component: Team, teamRole: true },
   { id: 'queue', label: 'Queue', component: Queue },
@@ -25,12 +26,11 @@ const TABS = [
   { id: 'budgets', label: 'Budgets', component: Budgets },
   { id: 'people', label: 'Directory', component: People },
   { id: 'requests', label: 'Requests', component: Requests },
-  { id: 'analytics', label: 'Analytics', component: Analytics, opsOnly: true },
-  { id: 'policy', label: 'Policy', component: PolicyParameters, opsOnly: true },
+  { id: 'policy', label: 'Policy', component: PolicyParameters },
   { id: 'connectors', label: 'Connectors', component: Connectors, opsOnly: true },
 ]
 
-// where each role lands by default: ops on Analytics, everyone else on My view
+// where each role lands by default: ops on the Overview, everyone else on My view
 const defaultTabFor = (role) => (role === 'ops' ? 'analytics' : 'me')
 
 // every demo actor (bar the anonymous viewer and ops) takes part in an active project,

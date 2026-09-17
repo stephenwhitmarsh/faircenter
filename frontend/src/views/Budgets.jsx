@@ -1,18 +1,21 @@
-// Budgets tab: the two pools and how they are divided.
+// Budgets tab: the two pools and how they are divided. Operations size each
+// team's pool here; team leads split it across projects on the Team tab.
 import { useState } from 'react'
 import { fmt } from '../format.js'
 import {
   teams, people, projectOwner, priorityTier, teamById, primaryTeam,
   personProjects, teamProjectsList,
-  personPoolHours, poolBars, teamPhase, governance,
+  personPoolHours, projectsPoolHours, poolBars, teamPhase, teamHue, governance,
 } from '../data/mockData.js'
 import DataTable from '../components/DataTable.jsx'
 import InfoTip from '../components/InfoTip.jsx'
 import PoolBars from '../components/PoolBars.jsx'
+import { useSession } from '../session.jsx'
 
 const pct = (v, total) => (total ? Math.round((v / total) * 100) : 0)
 const teamNameOf = (p) => (p.teamId ? (teamById(p.teamId)?.name || 'team') : 'Organisation')
 const ownerTeamOf = (p) => { const o = people.find((pp) => pp.id === p.personId); const t = o && primaryTeam(o); return t ? t.name : '—' }
+const teamUsed = (t) => teamProjectsList.filter((p) => p.teamId === t.id).reduce((s, p) => s + (p.used || 0), 0)
 
 function PriorityTag({ p }) {
   const t = priorityTier(p)
@@ -48,12 +51,29 @@ function Section({ title, meta, open, onToggle, children }) {
 }
 
 export default function Budgets({ onNav }) {
+  const { can } = useSession()
+  const canEdit = can('editPolicy') // only operations size team pools
   const [open, setOpen] = useState(() => new Set())
   const toggle = (k) => setOpen((s) => { const n = new Set(s); n.has(k) ? n.delete(k) : n.add(k); return n })
   const isOpen = (k) => open.has(k)
 
+  // the teams pool: the GPU-hours left after the person pool, divided across teams
+  const teamsPoolHours = projectsPoolHours()
+  const [, setRev] = useState(0) // bump to re-read team.budget after Apply
+  const [tDraft, setTDraft] = useState(() => Object.fromEntries(teams.map((t) => [t.id, t.budget])))
+  const resetTeams = () => setTDraft(Object.fromEntries(teams.map((t) => [t.id, t.budget])))
+  // an edit can never push the running total past the teams pool; the rest holds what the other teams hold
+  const setTeamBudget = (id, raw) => setTDraft((d) => {
+    const others = teams.reduce((s, t) => s + (t.id === id ? 0 : (d[t.id] ?? t.budget)), 0)
+    const maxV = Math.max(0, teamsPoolHours - others)
+    return { ...d, [id]: Math.min(maxV, Math.max(0, Math.round(Number(raw) || 0))) }
+  })
+  const allocTeams = teams.reduce((s, t) => s + (tDraft[t.id] ?? t.budget), 0)
+  const remainTeams = teamsPoolHours - allocTeams
+  const teamsDirty = teams.some((t) => (tDraft[t.id] ?? t.budget) !== t.budget)
+  const applyTeams = () => { for (const t of teams) if (tDraft[t.id] != null) t.budget = tDraft[t.id]; setRev((v) => v + 1) }
+
   const teamPoolTotal = teams.reduce((s, t) => s + t.budget, 0)
-  const maxTeamBudget = Math.max(1, ...teams.map((t) => t.budget))
   // person pool aggregated per person: a uniform policy budget, their actual use, and the gap
   const personPeople = (() => {
     const byId = new Map()
@@ -64,37 +84,66 @@ export default function Budgets({ onNav }) {
     }
     return [...byId.values()]
   })()
-  const personTotal = personPeople.reduce((s, r) => s + r.budget, 0)
 
   return (
     <section>
       <PoolsCard />
 
       <Section
-        title="Team pools" meta={`${fmt(teamPoolTotal)} GPU-h · ${teams.length} teams · ${teamProjectsList.length} projects`}
+        title="Team pools" meta={`${fmt(teamsPoolHours)} GPU-h · ${teams.length} teams · ${teamProjectsList.length} projects`}
         open={isOpen('projects')} onToggle={() => toggle('projects')}
       >
         <div className="subhead">Distribution across teams</div>
+        {canEdit && <p className="hint" style={{ margin: '0 0 8px' }}>Size each team's pool within the teams pool. Team leads split it across projects on the Team tab.</p>}
         <div className="tbl-scroll">
-          <DataTable
-            initialSort={{ key: 'budget', dir: 'desc' }}
-            columns={[
-              { key: 'team', label: 'Team', sortValue: (t) => t.name, render: (t) => t.name },
-              { key: 'budget', label: 'Budget', num: true, sortValue: (t) => t.budget, render: (t) => fmt(t.budget) },
-              { key: 'share', label: 'Share of team pool', sortValue: (t) => t.budget, render: (t) => (
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, width: 200 }}>
-                  <span className="meter" style={{ flex: 1 }}><span style={{ width: (t.budget / maxTeamBudget) * 100 + '%' }} /></span>
-                  <span style={{ width: 44, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{pct(t.budget, teamPoolTotal)}%</span>
-                </span>
-              ) },
-              { key: 'phase', label: 'Phase', num: true, sortValue: (t) => teamPhase(t), render: (t) => (t.phaseOverride != null ? <span className="tag" title={`Set for this team; org default is phase ${governance.phase}`}>{teamPhase(t)} · set</span> : <span className="hint">{teamPhase(t)}</span>) },
-              { key: 'standing', label: 'Standing', num: true, sortValue: (t) => t.standing, render: (t) => t.standing },
-              { key: 'people', label: 'People', num: true, sortValue: (t) => people.filter((p) => (p.teamIds ?? []).includes(t.id)).length, render: (t) => fmt(people.filter((p) => (p.teamIds ?? []).includes(t.id)).length) },
-              { key: 'projects', label: 'Projects', num: true, sortValue: (t) => teamProjectsList.filter((p) => p.teamId === t.id).length, render: (t) => fmt(teamProjectsList.filter((p) => p.teamId === t.id).length) },
-            ]}
-            rows={teams.map((t) => ({ ...t, id: t.id }))}
-          />
+          <table className="data" style={{ tableLayout: 'fixed' }}>
+            <colgroup><col /><col style={{ width: '90px' }} /><col style={{ width: '110px' }} /><col style={{ width: '140px' }} /><col style={{ width: '190px' }} /></colgroup>
+            <thead><tr><th>Team</th><th className="num">Phase</th><th className="num">Used</th><th className="num">Budget</th><th>Share of teams pool</th></tr></thead>
+            <tbody>
+              {teams.map((t) => {
+                const b = tDraft[t.id] ?? t.budget
+                const share = pct(b, teamsPoolHours)
+                return (
+                  <tr key={t.id}>
+                    <td>{t.name}</td>
+                    <td className="num">{t.phaseOverride != null ? <span className="tag" title={`Set for this team; org default is phase ${governance.phase}`}>{teamPhase(t)} · set</span> : <span className="hint">{teamPhase(t)}</span>}</td>
+                    <td className="num">{fmt(teamUsed(t))}</td>
+                    <td className="num">
+                      {canEdit
+                        ? <span className="numin"><input type="number" min="0" step="1000" value={b} onChange={(e) => setTeamBudget(t.id, e.target.value)} style={{ width: 110 }} /></span>
+                        : fmt(b)}
+                    </td>
+                    <td>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, width: 180 }}>
+                        <span className="meter" style={{ flex: 1 }}><span style={{ width: Math.min(100, share) + '%', background: teamHue[t.id] }} /></span>
+                        <span style={{ width: 38, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{share}%</span>
+                      </span>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+            <tfoot>
+              <tr>
+                <td colSpan={3}><b>Allocated</b></td>
+                <td className="num"><b>{fmt(allocTeams)}</b></td>
+                <td><b>{pct(allocTeams, teamsPoolHours)}%</b> of pool</td>
+              </tr>
+              <tr>
+                <td colSpan={3}>{remainTeams < 0 ? 'Over-committed' : 'Remaining'}</td>
+                <td className="num">{fmt(Math.abs(remainTeams))}</td>
+                <td>{pct(Math.abs(remainTeams), teamsPoolHours)}% of pool</td>
+              </tr>
+            </tfoot>
+          </table>
         </div>
+        {canEdit && (
+          <div className="apply-bar">
+            <button className="btn primary" disabled={!teamsDirty} onClick={applyTeams}>Apply team pools</button>
+            <button className="btn" disabled={!teamsDirty} onClick={resetTeams}>Discard</button>
+            <span className="hint">{teamsDirty ? 'Staged.' : 'No staged changes.'} The running total is capped by the teams pool.</span>
+          </div>
+        )}
         <div className="subhead" style={{ marginTop: 12 }}>Team projects</div>
         <div className="tbl-scroll">
           <DataTable

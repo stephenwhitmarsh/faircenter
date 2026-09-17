@@ -1,11 +1,12 @@
-// Team tab: per-team roll-out phase, pool sizing, and distribution across projects.
+// Team tab: per-team roll-out phase, mechanisms, and distribution of the team pool across projects.
 import { useState, useEffect } from 'react'
 import { fmt } from '../format.js'
 import {
   teams, teamById, teamHue, teamPhase, teamPhaseInfo, teamEnforcement, teamProjectsOf,
-  GOV_PHASES, governance, priorityTier, projectState, projectsPoolHours,
+  GOV_PHASES, governance, priorityTier, projectState,
 } from '../data/mockData.js'
 import { useSession, RoleChip } from '../session.jsx'
+import Mechanisms from '../components/Mechanisms.jsx'
 
 const pct = (v, total) => (total ? Math.round((v / total) * 100) : 0)
 
@@ -13,18 +14,6 @@ function PriorityTag({ p }) {
   const t = priorityTier(p)
   if (!t) return <span className="hint">n/a</span>
   return <span className={'tag prio-' + t}>{t}</span>
-}
-
-// the mechanisms in force, as factual tags
-function mechTags(on = {}) {
-  const items = [
-    ['person budgets', on.enfPerson],
-    ['project budgets', on.enfProject],
-    ['team pool', on.enfTeam],
-    ['lanes', on.lanes],
-    ['cross-team standing', on.teamStanding],
-  ]
-  return items.filter(([, v]) => v).map(([label]) => label)
 }
 
 export default function Team({ onNav }) {
@@ -40,10 +29,6 @@ export default function Team({ onNav }) {
   const [phaseSel, setPhaseSel] = useState(() => teamPhase(team))
   useEffect(() => { setPhaseSel(teamPhase(team)) }, [teamId]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ops-only: the size of this team's pool, staged until Apply
-  const [poolDraft, setPoolDraft] = useState(() => team?.budget || 0)
-  useEffect(() => { setPoolDraft(team?.budget || 0) }, [teamId, rev]) // eslint-disable-line react-hooks/exhaustive-deps
-
   // distribution covers only active projects; finished ones no longer draw, planned ones are
   // funded through a new-project request when approved
   const projs = teamProjectsOf(teamId).filter((p) => projectState(p) === 'active')
@@ -56,20 +41,13 @@ export default function Team({ onNav }) {
   if (!team) return <section><div className="card"><p className="hint" style={{ margin: 0 }}>No team selected.</p></div></section>
 
   const info = teamPhaseInfo(team)
+  // the phase whose mechanisms the toggles show: the staged selection for ops, the team's own otherwise
+  const selPhase = GOV_PHASES.find((g) => g.n === phaseSel) || info
   const enf = teamEnforcement(team) // mechanisms actually in force for the team
   const teamPoolActive = !!enf.enfTeam
   const applyPhase = () => { team.phaseOverride = phaseSel === governance.phase ? null : phaseSel; setRev((v) => v + 1) }
   const resetPhase = () => { team.phaseOverride = null; setPhaseSel(governance.phase); setRev((v) => v + 1) }
   const phaseDirty = phaseSel !== teamPhase(team)
-
-  // ops distribute the whole teams pool one team at a time; the split into person vs teams is set in Policy
-  const teamsPool = projectsPoolHours()
-  const otherTeamsPool = teams.reduce((s, t) => s + (t.id === teamId ? 0 : (t.budget || 0)), 0)
-  const maxPool = Math.max(0, teamsPool - otherTeamsPool)
-  const poolClamped = Math.min(maxPool, Math.max(0, Math.round(Number(poolDraft) || 0)))
-  const poolUnallocated = Math.max(0, teamsPool - otherTeamsPool - poolClamped)
-  const poolDirty = poolClamped !== (team.budget || 0)
-  const applyPool = () => { team.budget = poolClamped; setRev((v) => v + 1) }
 
   const pool = team.budget || 0
   const allocated = projs.reduce((s, p) => s + (draft[p.id] ?? p.budget), 0)
@@ -94,19 +72,15 @@ export default function Team({ onNav }) {
         </select>
       </div>
 
-      {/* Policy in force for the team — operations only */}
-      {canPolicy && (
-        <div className="card">
-          <div className="card-title">
-            Policy — {team.name} <RoleChip role="ops" label="ops" />
-            <span className="th-unit" style={{ marginLeft: 8 }}>{info.name}</span>
-          </div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6, margin: '2px 0 4px' }}>
-            <span className="hint" style={{ marginRight: 2 }}>In force</span>
-            {mechTags(enf).map((m) => <span key={m} className="tag">{m}</span>)}
-            {mechTags(enf).length === 0 && <span className="hint">nothing enforced — transparency only.</span>}
-          </div>
-          <div className="gov-steps" style={{ marginTop: 8 }}>
+      {/* Policy for the team: mechanisms show for team leads and ops; only ops stage a phase */}
+      <div className="card">
+        <div className="card-title">
+          Policy — {team.name}
+          {canPolicy && <RoleChip role="ops" label="ops" />}
+          <span className="th-unit" style={{ marginLeft: 8 }}>{selPhase.name}</span>
+        </div>
+        {canPolicy && (<>
+          <div className="gov-steps">
             {GOV_PHASES.map((g) => (
               <button key={g.key} type="button" className={'gov-step' + (g.n === phaseSel ? ' cur' : g.n < phaseSel ? ' done' : '')} onClick={() => setPhaseSel(g.n)}>
                 <span className="gov-n">{g.n}</span>
@@ -115,42 +89,19 @@ export default function Team({ onNav }) {
               </button>
             ))}
           </div>
-          <div className="apply-bar" style={{ marginTop: 8 }}>
+          <div className="apply-bar" style={{ marginTop: 8, marginBottom: 8 }}>
             <button className="btn primary" disabled={!phaseDirty} onClick={applyPhase}>Apply to team</button>
             <button className="btn" disabled={team.phaseOverride == null} onClick={resetPhase}>Reset to default</button>
-            <span className="hint">{phaseDirty ? 'Staged.' : team.phaseOverride != null ? 'Set for this team.' : 'Following the org default.'}</span>
+            <span className="hint">{phaseDirty ? 'Staged, not yet applied.' : team.phaseOverride != null ? 'Set for this team.' : 'Following the org default.'}</span>
           </div>
-        </div>
-      )}
-
-      {/* Size of this team's pool — operations only. The person vs teams split stays in Policy. */}
-      {canPolicy && (
-        <div className="card">
-          <div className="card-title">Team pool — {team.name} <RoleChip role="ops" label="ops" /></div>
-          <div className="controls" style={{ marginTop: 0, marginBottom: 8 }}>
-            <label>Pool</label>
-            <span className="numin">
-              <input type="number" min="0" max={maxPool} step="1000" value={poolDraft} onChange={(e) => setPoolDraft(e.target.value)} style={{ width: 130 }} />
-              <span className="numin-suffix">GPU-h</span>
-            </span>
-            <button className="btn" onClick={() => setPoolDraft(maxPool)}>Take the rest</button>
-            
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, maxWidth: 420, marginBottom: 4 }}>
-            <span className="meter" style={{ flex: 1 }}><span style={{ width: pct(poolClamped, teamsPool) + '%', background: teamHue[team.id] }} /></span>
-            <span style={{ width: 44, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{pct(poolClamped, teamsPool)}%</span>
-          </div>
-          <div className="apply-bar">
-            <button className="btn primary" disabled={!poolDirty} onClick={applyPool}>Apply pool</button>
-            <button className="btn" disabled={!poolDirty} onClick={() => setPoolDraft(team.budget || 0)}>Discard</button>
-            <span className="hint">{poolDirty ? 'Staged.' : 'No staged changes.'} Allocations across projects are capped by the pool.</span>
-          </div>
-        </div>
-      )}
+        </>)}
+        <Mechanisms flags={selPhase.on} editable={false} />
+      </div>
 
       {/* Distribution of the team pool across projects (team lead) */}
       <div className="card">
-        <div className="card-title">Distribution across projects</div>
+        <div className="card-title">Distribution across projects <span className="th-unit">pool {fmt(pool)} GPU-h</span></div>
+        {canPolicy && <p className="hint" style={{ margin: '0 0 8px' }}>Size this team's pool on the Budgets tab.</p>}
         {!teamPoolActive ? (
           <p className="hint" style={{ marginBottom: 0 }}>
             The team pool is distributed by the team lead once operations turn on team budgets for this team.
@@ -210,7 +161,7 @@ export default function Team({ onNav }) {
             <div className="apply-bar">
               <button className="btn primary" disabled={!distDirty} onClick={applyDist}>Apply distribution</button>
               <button className="btn" disabled={!distDirty} onClick={discardDist}>Discard</button>
-              <span className="hint">{distDirty ? 'Staged.' : 'No staged changes.'}</span>
+              <span className="hint">{distDirty ? 'Staged.' : 'No staged changes.'} Capped by the team pool.</span>
             </div>
           )}
           
