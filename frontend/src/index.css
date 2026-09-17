@@ -23,6 +23,13 @@
   --series-3:    #1baf7a;
   --series-4:    #eda100;
 
+  /* logo (adapts to theme; body/ink/yarn fixed, outline flips) */
+  --logo-body:   #f6f1e4;
+  --logo-line:   #1d1b18;
+  --logo-ink:    #1d1b18;
+  --logo-yarn:   #e8733d;
+  --logo-nose:   #e58b9a;
+
   --radius: 8px;
   font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
   font-size: 14px;
@@ -40,6 +47,8 @@
     --grid:      #2c2c2a;
     --line:      #383835;
     --border:    rgba(255, 255, 255, 0.10);
+
+    --logo-line: #f1ede0;
 
     --accent:    #3987e5;
     --series-1:  #3987e5;

@@ -10,7 +10,7 @@
 /* header */
 .app-header {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   padding: 20px 0 14px;
   border-bottom: 1px solid var(--border);
@@ -18,7 +18,7 @@
 
 .brand {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 10px;
 }
 

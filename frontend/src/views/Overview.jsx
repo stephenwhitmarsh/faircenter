@@ -1,7 +1,7 @@
 // Operations overview: tiles and the "needs attention" list, shown at the top of Analytics.
 import {
   projects, reservations, parameters, period, effectiveGpus, runningAt, activeProjects,
-  projRate, queueSnapshot, requests as changeRequests, poolRealisation,
+  projRate, queueSnapshot, requests as changeRequests, poolRealisation, projectState,
 } from '../data/mockData.js'
 import { fmt } from '../format.js'
 import { useSession } from '../session.jsx'
@@ -24,6 +24,8 @@ export default function Overview({ onNav }) {
   const qMedMin = qw.length ? qw[Math.floor(qw.length / 2)] / 60000 : 0
   const pending = changeRequests.filter((r) => r.status === 'pending')
   const activeTeam = active.filter((p) => p.funding !== 'person')
+  // the team-project roster still on the books: those running now plus those yet to start
+  const plannedTeam = projects.filter((p) => p.funding !== 'person' && projectState(p) !== 'finished')
   const realis = poolRealisation()
   const pctLabel = (v) => (v == null ? '—' : Math.round(v * 100) + '%')
 
@@ -44,10 +46,10 @@ export default function Overview({ onNav }) {
       <div className="tiles">
         <Tile label="Utilisation now" value={util + '%'} note={`${fmt(inUse)} of ${fmt(capNow)} GPUs`} onClick={() => onNav && onNav('consumption')} />
         <Tile label="In queue" value={fmt(q.length)} note={`${fmt(q.reduce((s, r) => s + r.gpus, 0))} GPUs waiting`} onClick={() => onNav && onNav('queue')} />
-        <Tile label="Queue wait" value={q.length ? medLabel(qMedMin) : '—'} note="median, jobs waiting now" onClick={() => onNav && onNav('queue')} />
-        <Tile label="Project budget realisation" value={pctLabel(realis.project)} note="used vs allocated, to date" onClick={() => onNav && onNav('review')} />
-        <Tile label="Person budget realisation" value={pctLabel(realis.person)} note="used vs allocated, to date" onClick={() => onNav && onNav('budgets')} />
-        <Tile label="Active projects" value={fmt(activeTeam.length)} note="team projects running now" onClick={() => onNav && onNav('review')} />
+        <Tile label="Queue wait" value={q.length ? medLabel(qMedMin) : '—'} note="median of waiting jobs" onClick={() => onNav && onNav('queue')} />
+        <Tile label="Project budget used" value={pctLabel(realis.project)} note="vs allocated" onClick={() => onNav && onNav('review')} />
+        <Tile label="Person budget used" value={pctLabel(realis.person)} note="vs allocated" onClick={() => onNav && onNav('budgets')} />
+        <Tile label="Active projects" value={fmt(activeTeam.length)} note={`of ${fmt(plannedTeam.length)} planned`} onClick={() => onNav && onNav('review')} />
       </div>
 
       <div className="card">

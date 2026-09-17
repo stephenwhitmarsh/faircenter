@@ -15,6 +15,7 @@ import Queue from './views/Queue.jsx'
 import Team from './views/Team.jsx'
 import { period, leads, opsPeople, members, projectLeads, projectsLedBy, projectState, activeSwitcherPeople } from './data/mockData.js'
 import { SessionProvider, useSession, actorFor, RoleChip } from './session.jsx'
+import Logo from './components/Logo.jsx'
 
 const TABS = [
   { id: 'analytics', label: 'Overview', component: Analytics, opsOnly: true },
@@ -99,6 +100,7 @@ function AppInner() {
     <div className="app">
       <header className="app-header">
         <div className="brand">
+          <Logo height={30} />
           <span className="brand-name">faircenter</span>
         </div>
         <div className="header-right">

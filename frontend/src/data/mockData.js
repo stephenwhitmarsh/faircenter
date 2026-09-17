@@ -619,7 +619,9 @@ export function loadSeries(projList, t0, t1, keyOf, opts) {
   const bucketOf = {}; for (const p of projList) bucketOf[p.id] = keyOf(p)
   const set = new Set(projList.map((p) => p.id))
   const buckets = [...new Set(projList.map((p) => keyOf(p)))]
-  const emit = (cj, cr) => { const row = {}; for (const b of buckets) { if (split) { row[b] = cj[b]; row[b + RESV_SFX] = cr[b] } else { row[b] = cj[b] + cr[b] } } return row }
+  // a reservation is a hold: usage under it is absorbed inside the reservation, and only
+  // usage above it adds its own band. Job band = max(0, used - reserved); total = max(used, reserved).
+  const emit = (cj, cr) => { const row = {}; for (const b of buckets) { const over = Math.max(0, cj[b] - cr[b]); if (split) { row[b] = over; row[b + RESV_SFX] = cr[b] } else { row[b] = cr[b] + over } } return row }
   const raw = (t1 - t0) <= 14 * DAY
   if (raw) {
     const evts = []
@@ -632,15 +634,38 @@ export function loadSeries(projList, t0, t1, keyOf, opts) {
     return { rows, buckets, mode: 'raw' }
   }
   const d0 = Math.floor(t0 / DAY), d1 = Math.ceil(t1 / DAY), nDays = d1 - d0
-  const gj = new Map(), gr = new Map()
+  const gj = new Map()  // jobs: mean GPUs over the day (GPU-hours / 24)
+  const gr = new Map()  // reservations: the reserved level, kept as a rectangular block
   for (let d = 0; d < nDays; d++) { gj.set(d, Object.fromEntries(buckets.map((b) => [b, 0]))); gr.set(d, Object.fromEntries(buckets.map((b) => [b, 0]))) }
+  // jobs -> time-averaged GPUs per day (actual usage genuinely varies within a day)
   for (const u of units) {
-    if (!set.has(u.projectId) || u.end <= t0 || u.start >= t1) continue
-    const b = bucketOf[u.projectId]; const grid = u.kind === 'resv' ? gr : gj; let s = Math.max(u.start, t0); const e = Math.min(u.end, t1)
-    while (s < e) { const di = Math.floor(s / DAY) - d0; const de = (Math.floor(s / DAY) + 1) * DAY; const seg = Math.min(e, de) - s; if (grid.has(di)) grid.get(di)[b] += u.gpus * seg / HOUR; s = de }
+    if (u.kind === 'resv' || !set.has(u.projectId) || u.end <= t0 || u.start >= t1) continue
+    const b = bucketOf[u.projectId]; let s = Math.max(u.start, t0); const e = Math.min(u.end, t1)
+    while (s < e) { const di = Math.floor(s / DAY) - d0; const de = (Math.floor(s / DAY) + 1) * DAY; const seg = Math.min(e, de) - s; if (gj.has(di)) gj.get(di)[b] += u.gpus * seg / HOUR; s = de }
+  }
+  // reservations -> the reserved GPU level, not a time-average: a hold is a rectangular
+  // block, so per day and bucket take the peak concurrent reserved GPUs. A single
+  // reservation then reads flat at its size across every day it is active.
+  const resvUnits = units.filter((u) => u.kind === 'resv' && set.has(u.projectId) && u.end > t0 && u.start < t1)
+  for (let d = 0; d < nDays; d++) {
+    const dayS = (d0 + d) * DAY, dayE = dayS + DAY
+    for (const b of buckets) {
+      const ev = []
+      for (const u of resvUnits) {
+        if (bucketOf[u.projectId] !== b) continue
+        const s = Math.max(u.start, dayS, t0), e = Math.min(u.end, dayE, t1)
+        if (e <= s) continue
+        ev.push([s, u.gpus]); ev.push([e, -u.gpus])
+      }
+      if (!ev.length) continue
+      ev.sort((x, y) => x[0] - y[0])
+      let cur = 0, peak = 0
+      for (const [, g] of ev) { cur += g; if (cur > peak) peak = cur }
+      gr.get(d)[b] = peak
+    }
   }
   const rows = []
-  for (let d = 0; d < nDays; d++) { const cj = Object.fromEntries(buckets.map((b) => [b, +(gj.get(d)[b] / 24).toFixed(1)])); const cr = Object.fromEntries(buckets.map((b) => [b, +(gr.get(d)[b] / 24).toFixed(1)])); rows.push({ t: (d0 + d) * DAY, ...emit(cj, cr) }) }
+  for (let d = 0; d < nDays; d++) { const cj = Object.fromEntries(buckets.map((b) => [b, +(gj.get(d)[b] / 24).toFixed(1)])); const cr = Object.fromEntries(buckets.map((b) => [b, +gr.get(d)[b].toFixed(1)])); rows.push({ t: (d0 + d) * DAY, ...emit(cj, cr) }) }
   return { rows, buckets, mode: 'daily' }
 }
 

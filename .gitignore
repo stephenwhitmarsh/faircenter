@@ -19,3 +19,5 @@ vite.config.js.timestamp-*.mjs
 _to_delete/
 # obsidian workspace
 .obsidian/
+# screenshot build folders
+.shot*/
