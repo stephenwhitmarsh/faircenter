@@ -1,4 +1,6 @@
+// Requests tab: raise a change, route it to an approver, and the demand planner.
 import { useState, useMemo, useEffect, Fragment } from 'react'
+import { fmt } from '../format.js'
 import { requests as seedRequests, projects, teams, teamById, teamsForPerson, projectState, fmtDay, effectiveGpus, resourceOutlook } from '../data/mockData.js'
 import { useSession, currentPerson, RoleChip } from '../session.jsx'
 
@@ -10,7 +12,6 @@ const TYPES = [
   { key: 'reservation', label: 'Reservation' },
 ]
 const DAY = 24 * 3600 * 1000
-const fmt = (n) => Number(n || 0).toLocaleString('en-GB')
 const projName = (id) => projects.find((p) => p.id === id)?.name ?? id
 const parseMs = (s) => { const t = Date.parse(s); return isNaN(t) ? null : t }
 
@@ -23,7 +24,6 @@ function routeFor(type, ctx) {
   return t ? `${t.name} lead` : 'Operations'
 }
 
-const fmtN = (n) => Number(Math.round(n) || 0).toLocaleString('en-GB')
 // GPUs a reservation request holds (numeric field, else parsed from its amount string)
 function resvGpus(r) { if (r.type !== 'reservation') return 0; if (typeof r.gpus === 'number') return r.gpus; const m = String(r.amount || '').match(/(\d[\d,]*)/); return m ? Number(m[1].replace(/,/g, '')) : 0 }
 
@@ -107,7 +107,7 @@ function RequestsTimeline({ list, selId, onSelect }) {
             <path d={basePath} stroke="var(--ink-2)" strokeOpacity="0.5" strokeWidth="1.25" fill="none" vectorEffect="non-scaling-stroke" />
             <path d={projPath} stroke="#eb6834" strokeWidth="2" fill="none" vectorEffect="non-scaling-stroke" />
           </svg>
-          <span style={{ position: 'absolute', right: 4, top: Math.max(0, yG(capMax) - 14), fontSize: 10, color: 'var(--ink-2)' }}>capacity {fmtN(capMax)}</span>
+          <span style={{ position: 'absolute', right: 4, top: Math.max(0, yG(capMax) - 14), fontSize: 10, color: 'var(--ink-2)' }}>capacity {fmt(capMax)}</span>
         </div>
       )}
 

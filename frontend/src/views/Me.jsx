@@ -1,4 +1,6 @@
+// My view tab: a person's own projects and jobs.
 import { useState } from 'react'
+import { fmt } from '../format.js'
 import {
   projectsForPerson, teamsForPerson, recentDailyRate, waitStats, queueSnapshot, runningJobsAt,
   projectById, projectState, projectEnforced, period, fmtDay, fmtDateTime, parameters,
@@ -6,7 +8,6 @@ import {
 import { useSession, currentPerson, RoleChip } from '../session.jsx'
 
 const DAY = 24 * 3600 * 1000
-const fmt = (n) => Math.round(n).toLocaleString('en-GB')
 const waited = (ms) => { const h = ms / 3600000; if (h < 1) return Math.round(ms / 60000) + ' min'; if (h < 48) return h.toFixed(1) + ' h'; return (h / 24).toFixed(1) + ' d' }
 const laneTag = (l) => <span className={'tag ' + (l === 'fast' ? 'prio-high' : l === 'bulk' ? '' : 'prio-medium')}>{l}</span>
 const medLabel = (m) => (m == null ? '—' : m < 60 ? Math.round(m) + ' min' : (m / 60).toFixed(1) + ' h')

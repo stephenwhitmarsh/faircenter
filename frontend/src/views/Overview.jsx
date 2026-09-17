@@ -1,11 +1,12 @@
+// Operations overview: tiles and the "needs attention" list, shown at the top of Analytics.
 import {
   projects, reservations, parameters, period, effectiveGpus, runningAt, activeProjects,
   projRate, queueSnapshot, requests as changeRequests, poolRealisation,
 } from '../data/mockData.js'
+import { fmt } from '../format.js'
 import { useSession } from '../session.jsx'
 
 const DAY = 24 * 3600 * 1000
-const fmt = (n) => Math.round(n).toLocaleString('en-GB')
 const medLabel = (m) => (m == null ? '—' : m < 60 ? Math.round(m) + ' min' : m < 60 * 48 ? (m / 60).toFixed(1) + ' h' : (m / 1440).toFixed(1) + ' d')
 
 export default function Overview({ onNav }) {

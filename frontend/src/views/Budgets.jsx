@@ -1,4 +1,6 @@
+// Budgets tab: the two pools and how they are divided.
 import { useState } from 'react'
+import { fmt } from '../format.js'
 import {
   teams, people, projectOwner, priorityTier, teamById, primaryTeam,
   personProjects, teamProjectsList,
@@ -8,7 +10,6 @@ import DataTable from '../components/DataTable.jsx'
 import InfoTip from '../components/InfoTip.jsx'
 import PoolBars from '../components/PoolBars.jsx'
 
-const fmt = (n) => Number(Math.round(n) || 0).toLocaleString('en-GB')
 const pct = (v, total) => (total ? Math.round((v / total) * 100) : 0)
 const teamNameOf = (p) => (p.teamId ? (teamById(p.teamId)?.name || 'team') : 'Organisation')
 const ownerTeamOf = (p) => { const o = people.find((pp) => pp.id === p.personId); const t = o && primaryTeam(o); return t ? t.name : '—' }

@@ -1,3 +1,4 @@
+// Connectors tab: the external systems the app reads from and writes to (operations only).
 import { useState } from 'react'
 import { connectors as seed } from '../data/mockData.js'
 import { useSession } from '../session.jsx'

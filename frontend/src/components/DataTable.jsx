@@ -1,3 +1,4 @@
+// Sortable table used across views: column config, sort state, and row rendering.
 import { useState, useMemo, Fragment } from 'react'
 
 // Sortable table.

@@ -1,11 +1,12 @@
+// Team tab: per-team roll-out phase, pool sizing, and distribution across projects.
 import { useState, useEffect } from 'react'
+import { fmt } from '../format.js'
 import {
   teams, teamById, teamHue, teamPhase, teamPhaseInfo, teamEnforcement, teamProjectsOf,
   GOV_PHASES, governance, priorityTier, projectState, projectsPoolHours,
 } from '../data/mockData.js'
 import { useSession, RoleChip } from '../session.jsx'
 
-const fmt = (n) => Number(Math.round(n) || 0).toLocaleString('en-GB')
 const pct = (v, total) => (total ? Math.round((v / total) * 100) : 0)
 
 function PriorityTag({ p }) {

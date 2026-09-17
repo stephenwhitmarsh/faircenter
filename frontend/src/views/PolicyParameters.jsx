@@ -1,9 +1,10 @@
+// Policy tab: roll-out phase, mechanisms, and parameter values (operations only).
 import { useState } from 'react'
+import { fmt } from '../format.js'
 import Toggle from '../components/Toggle.jsx'
 import { parameters, GOV_PHASES, governance, suggestedPersonBudget, poolBars } from '../data/mockData.js'
 import { useSession } from '../session.jsx'
 
-const fmt = (n) => Math.round(n).toLocaleString('en-GB')
 
 const LANE_EXAMPLE = {
   bulk: 'sbatch --qos=bulk ...',

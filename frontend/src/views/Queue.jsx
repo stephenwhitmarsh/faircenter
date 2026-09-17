@@ -1,10 +1,11 @@
+// Queue tab: jobs waiting to run and the order they will start in.
 import { useState } from 'react'
+import { fmt } from '../format.js'
 import { queueForecast, runningJobsAt, projectById, personById, teamById, priorityTier, period, effectiveGpus, fmtDateTime, parameters } from '../data/mockData.js'
 import { useSession, currentPerson } from '../session.jsx'
 import DataTable from '../components/DataTable.jsx'
 import InfoTip from '../components/InfoTip.jsx'
 
-const fmt = (n) => Math.round(n).toLocaleString('en-GB')
 const TIER_RANK = { high: 3, medium: 2, low: 1 }
 const LANE = { fast: 'fast', standard: 'standard', bulk: 'bulk' }
 const laneTag = (l) => <span className={'tag ' + (l === 'fast' ? 'prio-high' : l === 'bulk' ? '' : 'prio-medium')}>{LANE[l] || l}</span>

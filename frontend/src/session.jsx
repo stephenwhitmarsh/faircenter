@@ -1,3 +1,4 @@
+// Session and role context: the "Viewing as" identity and per-role permission checks.
 import { createContext, useContext, useState } from 'react'
 import { personById, teamById, opsPeople } from './data/mockData.js'
 

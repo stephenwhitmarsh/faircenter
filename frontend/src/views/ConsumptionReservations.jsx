@@ -1,4 +1,6 @@
+// Load tab: cluster load over time, reservations, and per-project consumption.
 import { useState, useMemo, useEffect, useRef } from 'react'
+import { fmt } from '../format.js'
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   ReferenceLine, ReferenceArea,
@@ -14,7 +16,6 @@ import {
 import { useSession } from '../session.jsx'
 
 const DAY = 24 * 3600 * 1000
-const fmt = (n) => Math.round(n).toLocaleString('en-GB')
 const floorDay = (ms) => Math.floor(ms / DAY) * DAY
 
 // team colours by name, plus the special buckets

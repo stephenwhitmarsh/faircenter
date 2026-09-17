@@ -1,4 +1,6 @@
+// Projects tab: the register of team projects, with per-project detail.
 import { useState, useEffect } from 'react'
+import { fmt } from '../format.js'
 import DataTable from '../components/DataTable.jsx'
 import InfoTip from '../components/InfoTip.jsx'
 import {
@@ -8,7 +10,6 @@ import {
 import { useSession, currentPerson } from '../session.jsx'
 
 const DAY = 24 * 3600 * 1000
-const fmt = (n) => Number(Math.round(n) || 0).toLocaleString('en-GB')
 function runsOutDate(p) {
   const rate = projRate(p)
   if (rate <= 0 || p.used >= p.budget) return null

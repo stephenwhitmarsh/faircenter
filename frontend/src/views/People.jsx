@@ -1,3 +1,4 @@
+// Directory tab: people, teams and projects as imported from Notion.
 import { useState } from 'react'
 import {
   people, teams, projects, projectOwner, projectsForPerson, peopleForProject, teamsForPerson, projectState, personById,

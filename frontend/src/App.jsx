@@ -1,3 +1,4 @@
+// Root component: header, role switcher, tab bar, and the active view.
 import { useState, useEffect } from 'react'
 import './App.css'
 

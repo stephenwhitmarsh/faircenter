@@ -1,4 +1,5 @@
-const fmt = (n) => Number(Math.round(n) || 0).toLocaleString('en-GB')
+// Pool bars: the committed, target and actual GPU-h split across the two pools.
+import { fmt } from '../format.js'
 
 // Pool bars over a trailing window. mode 'actual' shows consumption per pool with idle capacity
 // as the tail; mode 'target' shows the policy split per pool; mode 'allocated' shows how committed

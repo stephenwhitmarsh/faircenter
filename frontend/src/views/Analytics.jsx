@@ -1,3 +1,4 @@
+// Analytics tab: operations overview, indicator explorer, resource outlook, and scorecard.
 import { useState, useEffect, useMemo } from 'react'
 import {
   LineChart, Line, Area, ComposedChart, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine,
@@ -6,6 +7,7 @@ import InfoTip from '../components/InfoTip.jsx'
 import Overview from './Overview.jsx'
 import { kpiSeries, KPIS, paramEvents, KNOWN_KEYS, kpiForecast, resourceOutlook, period } from '../data/mockData.js'
 
+// compact chart formatter: whole numbers with separators at 1000+, two decimals below (shared fmt in ../format.js rounds everything)
 const fmt = (n) => (Math.abs(n) >= 1000 ? Math.round(n).toLocaleString('en-GB') : Math.round(n * 100) / 100)
 const LINE_COLORS = ['#2a78d6', '#eb6834', '#1baf7a', '#8b5cf6', '#e8368f', '#0ea5b7', '#eda100', '#6366f1', '#f43f5e']
 const EVENT_COLOR = { mechanism: 'var(--accent)', value: 'var(--muted)', phase: 'var(--ink-2)', capacity: '#1baf7a' }
