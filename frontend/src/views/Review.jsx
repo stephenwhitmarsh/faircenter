@@ -74,6 +74,7 @@ export default function Review() {
             </label>
           </span>
         </div>
+        <p className="hint" style={{ margin: '0 0 8px' }}>Click a project for details.</p>
         <div className="tbl-scroll">
           <DataTable
             initialSort={{ key: 'consumed', dir: 'desc' }}
