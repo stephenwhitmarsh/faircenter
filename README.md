@@ -31,7 +31,7 @@ graph TD
 ## How it is built and run
 I (Stephen Whitmarsh) design and direct faircenter, and vibe-code it with Claude, which writes the React and Vite code.
 
-The proof of concept is a browser app in React and Vite, with charts in Recharts and hand-built SVG. It runs on invented data at roughly the real scale of the organisation, around twenty teams and three hundred people, with a small simulated scheduler running the generated demand, so it shows the whole scheme without touching a cluster. There is no backend in this repository. The manual describes the Django service and SLURM adapter the live system needs.
+The proof of concept is a browser app in React and Vite, with charts in Recharts and hand-built SVG. It runs on invented data at roughly the real scale of the organisation, around twenty teams and three hundred people, with a small simulated scheduler running the generated demand, so it shows the whole scheme without touching a cluster. There is no backend in this repository. [BUILD.md](BUILD.md) describes the Django service and SLURM adapter the live system needs.
 
 Every push to `main` builds the static site and publishes it to GitHub Pages through `.github/workflows/deploy.yml`. To run it locally, work in the `frontend` directory: `npm install` once, then `npm run dev`.
 
@@ -45,7 +45,7 @@ graph TD
 ```
 
 ## Documentation
-The [manual](MANUAL.md) walks through the app tab by tab, with a technical appendix on the SLURM mapping and the data model. The [policy](POLICY.md) sets out how allocation works: the two pools, budgets, the mechanisms and their parameters, and admission. The [strategy](STRATEGY.md) covers the direction over time, the phased roll-out that moves budget from the person pool into teams, and the risks. [TODO.md](TODO.md) tracks the open points.
+The [manual](MANUAL.md) walks through the app tab by tab. The [policy](POLICY.md) sets out how allocation works: the two pools, budgets, the mechanisms and their parameters, and admission. The [strategy](STRATEGY.md) covers the direction over time, the phased roll-out that moves budget from the person pool into teams, and the risks. [BUILD.md](BUILD.md) covers how the app is built and deployed, and the architecture the live system needs. [TODO.md](TODO.md) tracks the open points.
 
 ## Where it lives
 - Repository: this repository.

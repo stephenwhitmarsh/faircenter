@@ -10,7 +10,7 @@ import InfoTip from '../components/InfoTip.jsx'
 import {
   capacity, effectiveGpus, projects, teams, people, reservations, parameters, period, teamHue,
   projectOwner, teamById, projectState, personProjects, primaryTeam, runningJobsAt,
-  loadSeries, splitUnits, RESV_SFX, consumedGpuH, runningAt, activeProjects, poolBars,
+  loadSeries, splitUnits, RESV_SFX, consumedGpuH, reservationUsage, runningAt, activeProjects, poolBars,
   fmtDay, fmtDateTime, isoDate,
 } from '../data/mockData.js'
 import { useSession } from '../session.jsx'
@@ -575,7 +575,7 @@ export default function ConsumptionReservations() {
       </div>
 
       <div className="card">
-        <div className="card-title">Reservations — {resvLabel} <span className="th-unit">{resvRows.length} shown</span><InfoTip text="Reservations overlapping the window shown above. Cancelling one returns its GPUs to the pool." /></div>
+        <div className="card-title">Reservations — {resvLabel} <span className="th-unit">{resvRows.length} shown</span><InfoTip text="Reservations overlapping the window shown above. Used is the share of the reserved GPU-time actually consumed in the window. Cancelling one returns its GPUs to the pool." /></div>
         <DataTable
           initialSort={{ key: 'start', dir: 'asc' }}
           columns={[
@@ -584,6 +584,15 @@ export default function ConsumptionReservations() {
             { key: 'label', label: 'Description' },
             { key: 'start', label: 'Window', sortValue: (r) => r.startMs, render: (r) => `${fmtDay(r.startMs)} – ${fmtDay(r.endMs)}` },
             { key: 'gpus', label: 'GPUs', num: true },
+            { key: 'used', label: 'Used', num: true, sortValue: (r) => reservationUsage(r).utilPct, render: (r) => {
+              const u = reservationUsage(r)
+              return (
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, width: 150 }} title={`${fmt(u.usedGpuH)} of ${fmt(u.reservedGpuH)} GPU-h used in the window`}>
+                  <span className="meter" style={{ flex: 1 }}><span style={{ width: u.utilPct + '%', background: 'var(--accent)' }} /></span>
+                  <span style={{ width: 34, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{u.utilPct}%</span>
+                </span>
+              )
+            } },
             { key: 'bookedBy', label: 'Booked by', sortValue: (r) => r.bookedBy || '', render: (r) => r.bookedBy || '—' },
             { key: 'approvedBy', label: 'Approved by', sortValue: (r) => r.approvedBy || '', render: (r) => r.approvedBy || '—' },
             { key: 'act', label: 'Action', sortable: false, render: (r) => {

@@ -542,6 +542,18 @@ export function recentDailyRate(project, days = 14) {
   return g / days
 }
 export function consumedGpuH(projList, t0, t1) { const set = new Set(projList.map((p) => p.id)); let g = 0; for (const j of jobs) { if (!set.has(j.projectId)) continue; const s = Math.max(j.start, t0), e = Math.min(j.end, t1); if (e > s) g += j.gpus * (e - s) / HOUR } return Math.round(g) }
+// How much of a reservation was actually used: the holding project's GPU-hours inside the
+// reservation window, against the reserved GPU-hours (reserved GPUs x window length). Usage is
+// clipped to the window, so work run outside it or the idle part of a partial overlap does not
+// count. For a reservation still running, it measures use to date.
+export function reservationUsage(r) {
+  const effEnd = Math.min(r.endMs, NOW)
+  const hours = Math.max(0, (effEnd - r.startMs) / HOUR)
+  const reservedGpuH = Math.round(r.gpus * hours)
+  const usedGpuH = hours > 0 ? consumedGpuH([{ id: r.projectId }], r.startMs, effEnd) : 0
+  const utilPct = reservedGpuH > 0 ? Math.min(100, Math.round((usedGpuH / reservedGpuH) * 100)) : 0
+  return { reservedGpuH, usedGpuH, utilPct, ended: r.endMs < NOW }
+}
 
 // --- queue and waits (scheduler transparency) ---
 export const priorityTierOf = priorityTier

@@ -21,7 +21,7 @@ Parts of the app that look finished but do not yet behave as the live system wou
 - Editable roll-out phase presets: edit a phase, save it to the preset, then apply it to the scheduler.
 - A what-if simulator over the policy parameters, so a change can be seen before it is applied.
 - A person-pool admission check, so individual work is bounded the way project work is.
-- Reclaiming reserved time that goes unused.
+- Automatic reclaim of reserved time that goes unused. The reservations table now shows how much of each reservation was used, but returning the GPUs is still a manual cancel.
 - Filters and CSV export on the Requests board.
 - A glossary of the terms and controls.
 - The graduation flow that formalises sustained personal work into a project.
