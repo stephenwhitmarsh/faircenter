@@ -399,7 +399,7 @@ export default function ConsumptionReservations() {
           </table>
           <div className="apply-bar" style={{ marginTop: 6 }}>
             <button className="btn" onClick={addCapAdj}>Add change</button>
-            <button className="btn primary" disabled={!capDirty} onClick={applyCapacity}>Apply schedule</button>
+            <button className="btn primary" disabled={!capDirty} onClick={applyCapacity}>Apply</button>
             <span className="hint">{capDirty ? 'Staged — not yet applied.' : capApplied ? 'Applied.' : ''}</span>
           </div>
         </div>

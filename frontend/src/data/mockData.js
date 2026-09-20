@@ -26,8 +26,11 @@ export const capacity = {
   base: 896,
   adjustments: [
     { at: Date.UTC(2025, 8, 1), gpus: 1024, note: 'H100 pod #2 online' },
-    { at: Date.UTC(2026, 9, 1), gpus: 1280, note: 'planned — Q4 expansion' },
-    { at: Date.UTC(2026, 11, 1), gpus: 1536, note: 'planned — winter buildout' },
+    { at: Date.UTC(2025, 11, 1), gpus: 1152, note: 'H100 pod #3 online' },
+    { at: Date.UTC(2026, 2, 1), gpus: 1280, note: 'H200 pod #1 online' },
+    { at: Date.UTC(2026, 5, 1), gpus: 1408, note: 'H200 pod #2 online' },
+    { at: Date.UTC(2026, 9, 1), gpus: 1600, note: 'planned — Q4 expansion' },
+    { at: Date.UTC(2026, 11, 1), gpus: 1792, note: 'planned — winter buildout' },
   ],
 }
 
@@ -40,10 +43,10 @@ export const capacity = {
 // reservation or approval. It starts large and is progressively dissolved into the
 // team and project pools as the rollout advances. Operations can override it per phase.
 export const GOV_PHASES = [
-  { n: 1, key: 'observe', name: 'Observe', short: 'transparency only', enforce: 'none', personPct: 0.60, on: { lanes: false, timeOfUse: false, headroom: false, oversubscription: false, teamStanding: false, enfPerson: false, enfProject: false, enfTeam: false }, desc: 'No budgets. The app shows use, queues and waits; nothing is enforced.' },
+  { n: 1, key: 'observe', name: 'Observe', short: 'transparency only', enforce: 'none', personPct: 0.60, on: { lanes: false, timeOfUse: false, headroom: false, oversubscription: false, teamStanding: false, enfPerson: false, enfProject: false, enfTeam: false }, desc: 'No budgets. The app shows use, queues and waits, and nothing is enforced.' },
   { n: 2, key: 'person', name: 'Person budgets', short: 'bounded per person', enforce: 'person', personPct: 0.45, on: { lanes: false, timeOfUse: true, headroom: true, oversubscription: true, teamStanding: false, enfPerson: true, enfProject: false, enfTeam: false }, desc: 'Each person gets a budget out of the person pool, sized so the allowances add up to it. The first real limit. Time-of-use weighting starts here.' },
-  { n: 3, key: 'project', name: 'Project budgets', short: 'a budget per project, run by project leads', enforce: 'project', personPct: 0.22, on: { lanes: true, timeOfUse: true, headroom: true, oversubscription: true, teamStanding: false, enfPerson: true, enfProject: true, enfTeam: false }, desc: 'Projects get their own budgets on top of the person budgets, each run by its lead — requests, reservations and priority — as the person pool shrinks.' },
-  { n: 4, key: 'team', name: 'Team budgets', short: 'a pool per team, run by team leads', enforce: 'team', personPct: 0.08, on: { lanes: true, timeOfUse: true, headroom: true, oversubscription: true, teamStanding: false, enfPerson: true, enfProject: true, enfTeam: true }, desc: 'The team gets a pool, handed to the team lead, who divides it across its projects and settles contention within the team.' },
+  { n: 3, key: 'team', name: 'Team budgets', short: 'a pool per team, run by team leads', enforce: 'team', personPct: 0.22, on: { lanes: false, timeOfUse: true, headroom: true, oversubscription: true, teamStanding: false, enfPerson: true, enfProject: false, enfTeam: true }, desc: 'Each team gets a pool, handed to its lead, who runs the team within it and settles contention inside the team. The first cap on team spend, and one coarse number to plan rather than a figure per project.' },
+  { n: 4, key: 'project', name: 'Project budgets', short: 'a budget per project, run by project leads', enforce: 'project', personPct: 0.08, on: { lanes: true, timeOfUse: true, headroom: true, oversubscription: true, teamStanding: false, enfPerson: true, enfProject: true, enfTeam: true }, desc: 'Projects get their own budgets inside the team pool, each run by its lead, as the person pool shrinks.' },
   { n: 5, key: 'standing', name: 'Cross-team standing', short: 'standing arbitrates between teams', enforce: 'team', personPct: 0.08, on: { lanes: true, timeOfUse: true, headroom: true, oversubscription: true, teamStanding: true, enfPerson: true, enfProject: true, enfTeam: true }, desc: 'Standing between teams arbitrates across pools when the cluster is contended, biasing each team\'s share of GPU-time by its standing. Introduced after team budgets, not with them.' },
 ]
 export const governance = { phase: 3 }
@@ -137,7 +140,7 @@ teams.forEach((t) => {
     projects.push({
       id: 'prj' + pid, name: `${t.name} ${WORDS[Math.floor(tr() * WORDS.length)]}`, funding,
       teamId: funding === 'person' ? undefined : t.id, personId: undefined,
-      budget: 0, used: 0, priority: wpickR(TIER, tr), start: isoDate(startMs), end: isoDate(endMs), startMs, endMs, avgGpus,
+      budget: 0, used: 0, start: isoDate(startMs), end: isoDate(endMs), startMs, endMs, avgGpus,
     })
     pid++
   }
@@ -147,7 +150,7 @@ for (let k = 0; k < 4; k++) {
   const t = teams[Math.floor(rng() * teams.length)]
   const startMs = START + Math.floor(rng() * 300 * DAY)
   const endMs = Math.min(END, startMs + Math.round(b2(rng, 60, 220)) * DAY)
-  projects.push({ id: 'prj' + pid, name: `${t.name} ${pick(['infra', 'platform', 'tooling'])}`, funding: 'team', teamId: t.id, personId: undefined, budget: 0, used: 0, priority: wpickR(TIER, rng), start: isoDate(startMs), end: isoDate(endMs), startMs, endMs, avgGpus: wpickR([[16, 3], [32, 3], [64, 2]], rng) })
+  projects.push({ id: 'prj' + pid, name: `${t.name} ${pick(['infra', 'platform', 'tooling'])}`, funding: 'team', teamId: t.id, personId: undefined, budget: 0, used: 0, start: isoDate(startMs), end: isoDate(endMs), startMs, endMs, avgGpus: wpickR([[16, 3], [32, 3], [64, 2]], rng) })
   pid++
 }
 // personal work is a single bucket per person, not many projects: assign each personal-pool row
@@ -177,6 +180,16 @@ projects.forEach((p) => {
 })
 function projPerson(p, r) { const pool = people.filter((pp) => pp.projectIds.includes(p.id)); return pool.length ? pool[Math.floor(r() * pool.length)].id : (p.personId || people[0].id) }
 
+// Team standing: the team-level priority that orders the queue under contention (SLURM fairshare
+// plus a base account priority). There is no per-project priority; a project inherits its team's
+// standing. Scaled to team size with deliberate strategic exceptions; operations tune these in
+// Policy, and the Cross-team standing phase is when they are used to bias shares between teams.
+const STANDING_OVERRIDE = { Voxtral: 9, Pixtral: 8, Shieldstral: 7, Codestral: 6 }
+teams.forEach((t) => {
+  const n = people.filter((p) => (p.teamIds || []).includes(t.id)).length
+  t.standing = STANDING_OVERRIDE[t.name] ?? Math.max(1, Math.min(8, Math.round(n / 2.5)))
+})
+
 // --- demand: generate job requests (not yet scheduled) ---
 const GPU_SIZES = [[1, 3], [2, 3], [4, 4], [8, 5], [16, 4], [32, 2.5], [64, 1.2], [128, 0.5]]
 const LANE_W = [['bulk', 3], ['standard', 5], ['fast', 2]]
@@ -184,6 +197,20 @@ const LANE_PRIO = { bulk: -50, standard: 0, fast: 100 }
 const TIER_RANK = { high: 3, medium: 2, low: 1 }
 function diurnal(ms) { const d = new Date(ms); const h = d.getUTCHours(), dow = d.getUTCDay(); const work = 0.5 + 0.5 * Math.max(0, Math.sin(((h - 6) / 24) * Math.PI * 2) * 0.5 + 0.5); return work * ((dow === 0 || dow === 6) ? 0.6 : 1) }
 const INTENSITY = 0.95 // aggregate demand runs the cluster near capacity so jobs queue
+// phase-aware behaviour: as mechanisms roll out over the timeline, work shifts to off-hours (once
+// time-of-use pricing is on) and heavy-team dominance evens out (as budgets bind). Both are smooth
+// ramps of a 0..1 progress. Illustrative for the POC; the trend markers show when each kicked in.
+const TOU_ON = Date.UTC(2025, 8, 1)      // time-of-use pricing starts (person-budgets phase)
+const EVEN_BY = Date.UTC(2026, 5, 10)    // team and project budgets fully bound by here
+const clamp01 = (x) => Math.max(0, Math.min(1, x))
+const ramp = (t, from, to) => clamp01((t - from) / (to - from))
+const offpeakPref = (t) => 0.75 * ramp(t, TOU_ON, EVEN_BY)
+function offHour(ms) { const d = new Date(ms); const h = d.getUTCHours(), w = d.getUTCDay(); return (h < 8 || h >= 20 || w === 0 || w === 6) ? 1 : 0 }
+function todAccept(ms, pref) { return Math.max(0.05, (1 - pref) * diurnal(ms) + pref * (0.3 + 0.7 * offHour(ms))) }
+// per-team demand skew (a few teams dominate early) that decays to even as budgets bind
+const TEAM_DOM = { Voxtral: 2.2, Pixtral: 1.9, Shieldstral: 1.6, Codestral: 1.4 }
+const domFor = (teamId) => { if (!teamId) return 1; const t = teams.find((x) => x.id === teamId); return t ? (TEAM_DOM[t.name] ?? 0.78) : 1 }
+const demandScale = (teamId, t) => 1 + (domFor(teamId) - 1) * (1 - ramp(t, START, EVEN_BY))
 const requests = []
 let jid = 0
 projects.forEach((p) => {
@@ -196,11 +223,12 @@ projects.forEach((p) => {
   const count = Math.min(600, Math.round(windowDays * INTENSITY * (0.4 + p.avgGpus / 48)))
   for (let k = 0; k < count; k++) {
     let submit, tries = 0
-    do { submit = p.startMs + jr() * span; tries++ } while (jr() > diurnal(submit) && tries < 6)
-    const gpus = wpickR(GPU_SIZES, jr)
+    do { submit = p.startMs + jr() * span; tries++ } while (jr() > todAccept(submit, offpeakPref(submit)) && tries < 6)
+    const gpus = Math.max(1, Math.round(wpickR(GPU_SIZES, jr) * demandScale(p.teamId, submit)))
     const durMs = Math.exp(b2(jr, Math.log(0.5), Math.log(60))) * HOUR
     const lane = wpickR(LANE_W, jr)
-    requests.push({ id: 'j' + (jid++), projectId: p.id, personId: projPerson(p, jr), gpus, durMs, submit, lane, prio: LANE_PRIO[lane] + TIER_RANK[p.priority] * 30 })
+    const tStd = p.teamId ? (teams.find((x) => x.id === p.teamId)?.standing ?? 5) : 5
+    requests.push({ id: 'j' + (jid++), projectId: p.id, personId: projPerson(p, jr), gpus, durMs, submit, lane, prio: LANE_PRIO[lane] + tStd * 10 })
   }
 })
 
@@ -270,19 +298,14 @@ projects.forEach((p) => {
   if (p.startMs < NOW) p.budget = Math.round(p.used / progress * b2(makeRng(hashStr(p.id + ':b')), 0.9, 1.3))
 })
 teams.forEach((t) => { t.budget = projects.filter((p) => p.teamId === t.id && p.funding !== 'person').reduce((s, p) => s + p.budget, 0) })
-// Between-team standing for the fair-tree (used only from the last roll-out phase). Simulated
-// here: roughly scaled to team size, with deliberate strategic exceptions. Operations set these
-// in Policy in a later phase; for now they are defaults on a 1–9 scale.
-const STANDING_OVERRIDE = { Voxtral: 9, Pixtral: 8, Shieldstral: 7, Codestral: 6 }
-teams.forEach((t) => {
-  const n = people.filter((p) => (p.teamIds || []).includes(t.id)).length
-  t.standing = STANDING_OVERRIDE[t.name] ?? Math.max(1, Math.min(8, Math.round(n / 2.5)))
-})
 // Staged roll-out: operations can put a team on a different phase from the org baseline, so a
 // mechanism (e.g. person budgets) is tried on willing teams — and thereby their people — before it
 // applies to everyone. Seeded here with a couple of pilots ahead and one team held back.
 teams.filter((t) => t.flagship).slice(0, 2).forEach((t) => { t.phaseOverride = 4 })
 { const held = teams.find((t) => !t.flagship); if (held) held.phaseOverride = 2 }
+// team budgets renew each period (a recurring allowance); projects are dated (a one-shot quota).
+// next team renewal is the first of the month after NOW.
+teams.forEach((t) => { const d = new Date(NOW); t.renewsMs = Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1); t.renews = fmtDay(t.renewsMs) })
 
 // load units = jobs + reservation holds (reserved GPUs run for their window)
 export const RESV_SFX = '__r' // series-key suffix for the reservation part of a bucket
@@ -303,7 +326,7 @@ export const lanes = {
 export const parameters = {
   oversubscriptionFactor: 1.05,
   timeOfUse: { office: 1.0, off: 0.5 }, weights: { accountVsLane: 1.0, teamVsProject: 0.5 }, lanes,
-  toggles: { lanes: true, timeOfUse: true, headroom: true, oversubscription: true, teamStanding: false, enfPerson: true, enfProject: true, enfTeam: false },
+  toggles: { lanes: false, timeOfUse: true, headroom: true, oversubscription: true, teamStanding: false, enfPerson: true, enfProject: false, enfTeam: true },
   // top-level split of governed capacity between the person pool and the projects pool.
   // personPct is set by operations and defaults from the rollout phase (see GOV_PHASES).
   pools: { personPct: (GOV_PHASES.find((g) => g.n === governance.phase) || GOV_PHASES[0]).personPct },
@@ -311,7 +334,7 @@ export const parameters = {
 export const requestsList = [
   { id: 'req-1', type: 'budget change', subject: 'Voxtral v3 +40,000 GPU-h', note: 'Final pre-training run is larger than planned after the tokenizer change; need the extra budget to finish before the release freeze.', requestedBy: people[0].name, routedTo: 'Operations', status: 'pending', warning: 'Would take the Voxtral budget past its limit.' },
   { id: 'req-2', type: 'new project', subject: 'Long-context evaluation', note: 'New eval suite for 128k-context retrieval, feeding the next Voxtral and Codestral releases; ~3 weeks, mostly inference.', requestedBy: people[6].name, routedTo: 'Evaluation lead', status: 'pending', warning: null, startMs: Date.UTC(2026, 9, 1), endMs: Date.UTC(2026, 9, 22), amount: '80,000 GPU-h' },
-  { id: 'req-3', type: 'priority change', subject: 'Raise Mathstral v2 to high', note: 'Slipping against the partner deadline; needs to clear the queue ahead of the ablations to hit the demo date.', requestedBy: people[1].name, routedTo: 'Direction', status: 'pending', warning: null },
+  { id: 'req-3', type: 'standing change', subject: 'Raise Mathstral team standing to 7', note: 'Slipping against the partner deadline; a higher team standing would lift its jobs in the queue to hit the demo date.', requestedBy: people[1].name, routedTo: 'Direction', status: 'pending', warning: null },
   { id: 'req-4', type: 'budget change', subject: 'Red-team sweep +8,000 GPU-h', note: 'Extra safety sweep requested after the last checkpoint; small top-up to cover the additional adversarial runs.', requestedBy: people[8].name, routedTo: 'Evaluation lead', status: 'approved', warning: null },
   { id: 'req-5', type: 'reservation', subject: 'Reserve 128 GPUs for Voxtral v3, 2026-10-05 to 2026-10-19', note: 'Held burst for the final pre-training run so it is not preempted mid-epoch.', requestedBy: people[0].name, routedTo: 'Operations', status: 'pending', warning: null, startMs: Date.UTC(2026, 9, 5), endMs: Date.UTC(2026, 9, 19), amount: '128 GPU' },
   { id: 'req-6', type: 'extension', subject: 'Extend Codestral v4 to 2026-12-15', note: 'Two more weeks to finish the long-context ablations before the release freeze.', requestedBy: people[3].name, routedTo: 'Codestral lead', status: 'approved', warning: null, decidedBy: 'Ops', decisionComment: 'Fits within the pool; approved.', startMs: Date.UTC(2026, 10, 30), endMs: Date.UTC(2026, 11, 15), amount: 'extend' },
@@ -394,13 +417,13 @@ export function capacityHoursToDate() { return capacityHoursBetween(period.start
 // Consumption and target are shares of the capacity offered in that window; the actual bar's
 // slack below full is idle capacity. The allocated bar is measured against capacity, so committed
 // budgets that fall short leave an uncommitted tail and budgets that exceed it overflow (over-committed).
-export function poolBars(windowDays = 120) {
+export function poolBars(windowDays = 120, teamBudgetOverride = null) {
   const t0 = windowDays ? period.nowMs - windowDays * DAY : period.startMs
   const capBase = capacityHoursBetween(t0, period.nowMs) || 1
   const cons = consumptionByPool(t0, period.nowMs)
   const tgt = targetByPool()
   // allocated budget per pool: the team pools (all funded projects) and the person pool as sized by policy
-  const teamB = teams.reduce((s, t) => s + (t.budget || 0), 0)
+  const teamB = teamBudgetOverride != null ? teamBudgetOverride : teams.reduce((s, t) => s + (t.budget || 0), 0)
   const personB = personPoolHours()
   const totalB = teamB + personB || 1
   const capAlloc = capacityHours() || 1 // total GPU-h the cluster offers over the period; the 100% baseline for committed budgets
@@ -531,7 +554,7 @@ export const connectors = [
 export function projectOwner(prj) { if (prj.funding === 'team') return teamById(prj.teamId)?.name ?? 'team'; if (prj.funding === 'person') return personById(prj.personId)?.name ?? 'person'; return 'Organisation' }
 export function ownerBucket(prj) { if (prj.funding === 'team') return teamById(prj.teamId)?.name; if (prj.funding === 'person') return 'Personal'; return 'Organisation' }
 export function pctOfOrg(v) { return Math.round((v / orgPool) * 100) }
-export function priorityTier(project) { return project.funding === 'person' ? null : (project.priority || 'medium') }
+export function priorityTier() { return null } // projects no longer carry a priority tier; priority is team-level (team standing)
 export function projectState(p) { if (p.startMs > NOW) return 'planned'; if (p.endMs < NOW) return 'finished'; return 'active' }
 export function activeProjects(atMs = NOW) { return projects.filter((p) => p.startMs <= atMs && p.endMs >= atMs) }
 
@@ -724,6 +747,8 @@ export const KPIS = [
   { key: 'wait', label: 'Mean wait', unit: 'min', better: 'low' },
   { key: 'queued', label: 'Jobs queued > 1h', unit: '%', better: 'low' },
   { key: 'overBudget', label: 'Projects over budget', unit: '%', better: 'low' },
+  { key: 'offpeak', label: 'Off-hours share', unit: '%', better: 'high' },
+  { key: 'evenness', label: 'Distribution evenness', unit: '%', better: 'high' },
   { key: 'personPct', label: 'Person pool %', unit: '%', better: 'neutral' },
   { key: 'oversub', label: 'Over-subscription', unit: '×', better: 'neutral' },
 ]
@@ -754,13 +779,26 @@ function mkBuckets(cadence) {
   }
   return out
 }
+const _projTeam = new Map(projects.map((p) => [p.id, p.funding !== 'person' ? p.teamId : null]))
 function kpiBucket(ms0, ms1) {
   const effEnd = Math.min(ms1, NOW)
   const hrsEl = Math.max(1, (effEnd - ms0) / HOUR)
   let gpuh = 0
-  for (const u of loadUnits) { const s = Math.max(u.start, ms0), e = Math.min(u.end, effEnd); if (e > s) gpuh += u.gpus * (e - s) / HOUR }
+  const teamG = new Map()
+  for (const u of loadUnits) {
+    const s = Math.max(u.start, ms0), e = Math.min(u.end, effEnd)
+    if (e > s) { const gh = u.gpus * (e - s) / HOUR; gpuh += gh; const tid = _projTeam.get(u.projectId); if (tid) teamG.set(tid, (teamG.get(tid) || 0) + gh) }
+  }
   const allW = []; let over1h = 0, jn = 0
   for (const j of jobs) { if (j.submit >= ms0 && j.submit < ms1) { const w = (j.start - j.submit) / 60000; jn++; if (w > 60) over1h++; allW.push(w) } }
+  // off-hours share of delivered GPU-hours, by job start time (rises as time-of-use pricing shifts work)
+  let jg = 0, jgOff = 0
+  for (const j of jobs) { if (j.start >= ms0 && j.start < effEnd) { const gh = j.gpus * (j.durMs / HOUR); jg += gh; if (offHour(j.start)) jgOff += gh } }
+  // team-usage evenness: 100 when GPU-hours are spread evenly across the active teams, lower when a
+  // few teams dominate. Rises as budgets bind and heavy-team dominance decays.
+  const vals = [...teamG.values()]; const tot = vals.reduce((a, b) => a + b, 0); const n = vals.length
+  let evenness = 0
+  if (tot > 0 && n > 1) { const dev = vals.reduce((a, v) => a + Math.abs(v / tot - 1 / n), 0); evenness = Math.round(100 * (1 - dev / (2 * (1 - 1 / n)))) }
   const activeP = projects.filter((p) => p.startMs < ms1 && p.endMs > ms0)
   const teamActive = activeP.filter((p) => p.funding !== 'person')
   // utilisation is realised GPU-hours over the GPU-hours the cluster actually offered in the window,
@@ -773,6 +811,8 @@ function kpiBucket(ms0, ms1) {
     wait: allW.length ? Math.round(allW.reduce((s, w) => s + w, 0) / allW.length) : 0,
     queued: jn ? Math.round((over1h / jn) * 100) : 0,
     overBudget: teamActive.length ? Math.round((teamActive.filter((p) => p.used > p.budget).length / teamActive.length) * 100) : 0,
+    offpeak: jg ? Math.round((jgOff / jg) * 100) : 0,
+    evenness,
   }
 }
 // Policy / mechanism timeline: dated points where operations changed a mechanism or a value,

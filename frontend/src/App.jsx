@@ -19,11 +19,11 @@ import Logo from './components/Logo.jsx'
 
 const TABS = [
   { id: 'analytics', label: 'Overview', component: Analytics, opsOnly: true },
-  { id: 'me', label: 'My view', component: Me },
+  { id: 'me', label: 'My view', component: Me, hideOps: true },
   { id: 'team', label: 'Team', component: Team, teamRole: true },
+  { id: 'review', label: 'Projects', component: Review },
   { id: 'queue', label: 'Queue', component: Queue },
   { id: 'consumption', label: 'Load', component: ConsumptionReservations },
-  { id: 'review', label: 'Projects', component: Review },
   { id: 'budgets', label: 'Budgets', component: Budgets },
   { id: 'people', label: 'Directory', component: People },
   { id: 'requests', label: 'Requests', component: Requests },
@@ -84,7 +84,7 @@ function AppInner() {
   const { session } = useSession()
   const isOps = session.role === 'ops'
   const isLead = session.role === 'lead'
-  const tabVisible = (t) => (!t.opsOnly || isOps) && (!t.teamRole || isOps || isLead)
+  const tabVisible = (t) => (!t.opsOnly || isOps) && (!t.teamRole || isOps || isLead) && (!t.hideOps || !isOps)
   const visibleTabs = TABS.filter(tabVisible)
   const [active, setActive] = useState(() => defaultTabFor(session.role))
   // when the role changes, stay on the current tab; only move if it is no longer visible

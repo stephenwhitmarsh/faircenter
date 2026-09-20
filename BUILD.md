@@ -55,13 +55,35 @@ graph TD
   humans -.->|no direct access| slurm
 ```
 
+### Budgets on the account tree
+Every budget is a `GrpTRESMins` limit on one node of SLURM's accounting tree, and the roll-out phases only decide which nodes carry a limit, not where a job is charged.
+
+The tree is built from the Notion memberships and does not change with the phase. The person pool is one branch, with each person a user association under it. The teams pool is the other, shaped as a team account, then a project account under it, then the people as user associations under the project. A job is submitted against an account, and that account decides which branch it draws from: a person's exploratory work charges their association in the person pool, and their funded work charges the project account that already sits under its team. Because the project association exists from the first import, project work charges its project account whether or not a project budget is set, which is why the app can show consumed per project throughout and add the cap only later.
+
+```mermaid
+graph TD
+
+  root([accounting tree]) --> pp([person pool])
+  root --> tp([teams pool])
+  pp --> pu([user: person budget])
+  tp --> team([team: team budget])
+  team --> proj([project: project budget])
+  proj --> u([user])
+```
+
+A phase turns a limit on at one level. Person budgets place it on the user associations in the person pool, team budgets on the team accounts, project budgets on the project accounts. SLURM binds a job to the tightest limit anywhere above it, so the limits coexist and the roll-out adds them without moving anything, with `AccountingStorageEnforce=limits` making them bind.
+
+The transition into project budgets is additive. With team budgets on and project budgets off, only the team account carries a limit, so the team total is capped and its projects share that pool freely. Turning project budgets on adds a limit to each project account, sized to fit inside the team's, and the team limit stays where it was as the outer ceiling. Nothing is re-declared and no budget is removed. Switching project budgets off again clears the project limits and leaves the team limit doing the work alone.
+
+The one place an account changes is graduation. When sustained personal work is taken on as a team project, its jobs start being submitted against the project account under the team instead of against the person pool, which is a new association rather than a budget being moved, and the person's still-exploratory work keeps charging the person pool. A person with team membership but no project has no project account to charge, so their team work goes against a team-level default account until they join or start a project.
+
 ### Data model
 The entities the app stores, beyond what it reads live from the scheduler:
 
 - People, teams and projects, imported from Notion and keyed to the app's own stable identifiers.
 - Membership links, a person in a project and a project in a team, effective-dated so the app can rebuild past structure.
 - Budgets for the two pools, the teams pool and the person pool, and for each team, project and person within them.
-- Proposals and the allocations they become, holding requested and granted quota, start, end, priority tier, and funding source.
+- Proposals and the allocations they become, holding requested and granted quota, start, end, and funding source.
 - Reservations, each holding GPUs for a window for a named holder.
 - Jobs, one record each from the scheduler's accounting database: submit, start and end time, GPU (TRES) count, owning project and person, and lane. The app derives every load curve from these, and the concurrent GPUs at an instant is the sum over jobs running then, so the series is an irregular step function.
 - Usage records read from the scheduler, by account, lane, GPU-hours and time.

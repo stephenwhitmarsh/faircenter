@@ -12,8 +12,8 @@ const fmt = (n) => (Math.abs(n) >= 1000 ? Math.round(n).toLocaleString('en-GB') 
 const LINE_COLORS = ['#2a78d6', '#eb6834', '#1baf7a', '#8b5cf6', '#e8368f', '#0ea5b7', '#eda100', '#6366f1', '#f43f5e']
 const EVENT_COLOR = { mechanism: 'var(--accent)', value: 'var(--muted)', phase: 'var(--ink-2)', capacity: '#1baf7a' }
 const METHODS = [{ k: 'last', label: 'Last' }, { k: 'linear', label: 'Linear' }, { k: 'smooth', label: 'Smooth' }]
-const LOOKBACKS = [{ m: 3, label: '3m' }, { m: 6, label: '6m' }, { m: 12, label: '12m' }, { m: 0, label: 'All' }]
-const HORIZONS = [{ m: -1, label: 'None' }, { m: 6, label: '6m' }, { m: 12, label: '12m' }, { m: 0, label: 'Max' }]
+const LOOKBACKS = [{ m: 6, label: '6m' }, { m: 12, label: '12m' }, { m: 0, label: 'All' }]
+const HORIZONS = [{ m: -1, label: 'None' }, { m: 6, label: '6m' }, { m: 12, label: '12m' }]
 const HOURS_MONTH = (365.25 / 12) * 24 * 3600 * 1000
 
 // retained across view switches

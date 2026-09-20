@@ -152,7 +152,7 @@ export default function PolicyParameters() {
 
         {editable && (
           <div className="apply-bar">
-            <button className="btn primary" disabled={!dirty} onClick={apply}>Apply to SLURM</button>
+            <button className="btn primary" disabled={!dirty} onClick={apply}>Apply</button>
             <button className="btn" disabled={!dirty} onClick={discard}>Discard</button>
             <span className="hint">{dirty ? 'Staged.' : 'No staged changes.'}</span>
           </div>

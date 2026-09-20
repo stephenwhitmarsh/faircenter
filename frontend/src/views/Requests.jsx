@@ -3,11 +3,12 @@ import { useState, useMemo, useEffect, Fragment } from 'react'
 import { fmt } from '../format.js'
 import { requests as seedRequests, projects, teams, teamById, teamsForPerson, projectState, fmtDay, effectiveGpus, resourceOutlook } from '../data/mockData.js'
 import { useSession, currentPerson, RoleChip } from '../session.jsx'
+import { requestIntent } from '../nav.js'
 
 const TYPES = [
   { key: 'new project', label: 'New project' },
   { key: 'budget change', label: 'Budget change' },
-  { key: 'priority change', label: 'Priority change' },
+  { key: 'standing change', label: 'Standing change' },
   { key: 'extension', label: 'Extension' },
   { key: 'reservation', label: 'Reservation' },
 ]
@@ -16,7 +17,7 @@ const projName = (id) => projects.find((p) => p.id === id)?.name ?? id
 const parseMs = (s) => { const t = Date.parse(s); return isNaN(t) ? null : t }
 
 function routeFor(type, ctx) {
-  if (type === 'priority change') return 'Direction'
+  if (type === 'standing change') return 'Direction'
   if (type === 'new project' || type === 'reservation') return 'Operations'
   if (type === 'budget change' && ctx.scope === 'team') return 'Operations'
   const p = projects.find((pp) => pp.id === ctx.projectId)
@@ -146,10 +147,19 @@ export default function Requests() {
   const me = currentPerson(session)
   const [list, setList] = useState(seedRequests)
   const [type, setType] = useState('new project')
-  const [f, setF] = useState({ name: '', teamId: teams[0].id, budget: 20000, priority: 'medium', projectId: projects[0].id, scope: 'project', bTeamId: teams[0].id, delta: 10000, tier: 'high', start: '2026-10-01', end: '2026-12-31', gpus: 32, resStart: '2026-10-01', resEnd: '2026-10-03', note: '' })
+  const [f, setF] = useState({ name: '', teamId: teams[0].id, budget: 20000, priority: 'medium', projectId: projects[0].id, scope: 'project', bTeamId: teams[0].id, stdTeamId: teams[0].id, standing: 5, delta: 10000, tier: 'high', start: '2026-10-01', end: '2026-12-31', gpus: 32, resStart: '2026-10-01', resEnd: '2026-10-03', note: '' })
   const set = (k, v) => setF((s) => ({ ...s, [k]: v }))
   const [dec, setDec] = useState(null) // { id, choice, comment } while an approver is deciding
   const [selId, setSelId] = useState(null) // request highlighted from the timeline
+
+  // a Projects/Budgets action button can navigate here with the form pre-filled
+  useEffect(() => {
+    const it = requestIntent.value
+    if (!it) return
+    requestIntent.value = null
+    if (it.type) setType(it.type)
+    if (it.fields) setF((s) => ({ ...s, ...it.fields }))
+  }, [])
 
   // the request board is scoped to the people involved: the requester, ops, and any approver a
   // request routes to. Nothing is a shared public board.
@@ -185,11 +195,12 @@ export default function Requests() {
       projectId: myProjects.some((p) => p.id === s.projectId) ? s.projectId : (myProjects[0]?.id ?? ''),
       teamId: myTeams.some((t) => t.id === s.teamId) ? s.teamId : (myTeams[0]?.id ?? ''),
       bTeamId: myTeams.some((t) => t.id === s.bTeamId) ? s.bTeamId : (myTeams[0]?.id ?? ''),
+      stdTeamId: myTeams.some((t) => t.id === s.stdTeamId) ? s.stdTeamId : (myTeams[0]?.id ?? ''),
     }))
   }, [myProjects, myTeams])
 
-  const needsProject = type === 'priority change' || type === 'extension' || type === 'reservation' || (type === 'budget change' && f.scope === 'project')
-  const needsTeam = type === 'new project' || (type === 'budget change' && f.scope === 'team')
+  const needsProject = type === 'extension' || type === 'reservation' || (type === 'budget change' && f.scope === 'project')
+  const needsTeam = type === 'new project' || type === 'standing change' || (type === 'budget change' && f.scope === 'team')
   const canSubmitAny = can('submitRequest') // may raise some request type (not necessarily the current one)
   const canSubmit = canSubmitAny && (!needsProject || myProjects.length > 0) && (!needsTeam || myTeams.length > 0)
   const noteLabel = type === 'new project' ? 'Description' : 'Justification'
@@ -201,7 +212,7 @@ export default function Requests() {
       if (f.scope === 'team') return { subject: `${teamById(f.bTeamId)?.name} team pool ${sign}${fmt(f.delta)} GPU-h`, warning: Number(f.delta) > 120000 ? 'Large pool change; would need a capacity review.' : null, scope: 'team', teamId: f.bTeamId }
       return { subject: `${projName(f.projectId)} ${sign}${fmt(f.delta)} GPU-h`, warning: Number(f.delta) > 40000 ? 'Would take the team budget past its limit.' : null, scope: 'project', projectId: f.projectId }
     }
-    if (type === 'priority change') return { subject: `Raise ${projName(f.projectId)} to ${f.tier}`, warning: null, projectId: f.projectId }
+    if (type === 'standing change') return { subject: `Set ${teamById(f.stdTeamId)?.name} standing to ${f.standing}`, warning: null, scope: 'team', teamId: f.stdTeamId }
     if (type === 'extension') { const p = projects.find((pp) => pp.id === f.projectId); return { subject: `Extend ${projName(f.projectId)} to ${f.end}`, warning: null, projectId: f.projectId, startMs: p?.endMs ?? null, endMs: parseMs(f.end), amount: 'extend' } }
     return { subject: `Reserve ${f.gpus} GPUs for ${projName(f.projectId)}, ${f.resStart} to ${f.resEnd}`, warning: Number(f.gpus) >= 256 ? 'Large reservation; check against free capacity.' : null, projectId: f.projectId, startMs: parseMs(f.resStart), endMs: parseMs(f.resEnd), amount: `${f.gpus} GPU` }
   }
@@ -256,15 +267,16 @@ export default function Requests() {
           {type === 'budget change' && f.scope === 'team' && (
             <div className="reqrow"><label>Team</label><select value={f.bTeamId} onChange={(e) => set('bTeamId', e.target.value)} disabled={!canSubmit} style={{ minWidth: 220 }}>{myTeams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</select></div>
           )}
-          {((type === 'budget change' && f.scope === 'project') || type === 'priority change' || type === 'extension' || type === 'reservation') && (
+          {((type === 'budget change' && f.scope === 'project') || type === 'extension' || type === 'reservation') && (
             <div className="reqrow"><label>Project</label><select value={f.projectId} onChange={(e) => set('projectId', e.target.value)} disabled={!canSubmit} style={{ minWidth: 220 }}>{myProjects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</select></div>
           )}
           {type === 'budget change' && (
             <div className="reqrow"><label>Change</label><span className="numin"><input type="number" step="1000" value={f.delta} onChange={(e) => set('delta', e.target.value)} style={{ width: 120 }} disabled={!canSubmit} /><span className="numin-suffix">GPU-h (±)</span></span></div>
           )}
-          {type === 'priority change' && (
-            <div className="reqrow"><label>New priority</label><select value={f.tier} onChange={(e) => set('tier', e.target.value)} disabled={!canSubmit}><option>high</option><option>medium</option><option>low</option></select></div>
-          )}
+          {type === 'standing change' && (<>
+            <div className="reqrow"><label>Team</label><select value={f.stdTeamId} onChange={(e) => set('stdTeamId', e.target.value)} disabled={!canSubmit} style={{ minWidth: 220 }}>{myTeams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</select></div>
+            <div className="reqrow"><label>New standing</label><span className="numin"><input type="number" min="1" max="9" step="1" value={f.standing} onChange={(e) => set('standing', e.target.value)} style={{ width: 80 }} disabled={!canSubmit} /><span className="numin-suffix">1–9</span></span></div>
+          </>)}
           {type === 'extension' && (
             <div className="reqrow"><label>New end</label><input type="date" value={f.end} onChange={(e) => set('end', e.target.value)} disabled={!canSubmit} /></div>
           )}

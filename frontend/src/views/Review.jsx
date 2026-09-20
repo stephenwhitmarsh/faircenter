@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react'
 import { fmt } from '../format.js'
 import DataTable from '../components/DataTable.jsx'
+import { requestIntent } from '../nav.js'
 import InfoTip from '../components/InfoTip.jsx'
 import {
   projectProjects, teamById, period, projRate, projectState, fmtDay, fmtDateTime,
@@ -21,10 +22,11 @@ function handle(name) { return name ? name.toLowerCase().replace(/[^a-z]+/g, '.'
 // retained across view switches
 const memo = { sel: null, finished: false, mine: true }
 
-export default function Review() {
+export default function Review({ onNav }) {
   const { session } = useSession()
   const me = currentPerson(session)
   // a viewer sees only their own projects by default; operations and the anonymous viewer see all
+  const isOps = session.role === 'ops'
   const scoped = !!me && session.role !== 'ops'
   const [sel, setSel] = useState(memo.sel)
   const [showFinished, setShowFinished] = useState(memo.finished)
@@ -40,7 +42,7 @@ export default function Review() {
       const expected = expectedToDate(p)
       return {
         id: p.id, name: p.name, team: p.teamId ? (teamById(p.teamId)?.name || 'team') : 'Organisation',
-        startMs: p.startMs, start: p.start, budget: p.budget, used: p.used, enforced: projectEnforced(p),
+        startMs: p.startMs, start: p.start, endMs: p.endMs, budget: p.budget, used: p.used, enforced: projectEnforced(p),
         pace: expected > 0 ? p.used / expected : 0, runsOut: runsOutDate(p), finished: projectState(p) === 'finished',
         realisation: p.budget > 0 ? p.used / p.budget : 0,
       }
@@ -51,12 +53,16 @@ export default function Review() {
     { key: 'name', label: 'Project', sortValue: (r) => r.name, render: (r) => r.name },
     { key: 'team', label: 'Team', sortValue: (r) => r.team, render: (r) => r.team },
     { key: 'start', label: 'Start', sortValue: (r) => r.startMs, render: (r) => fmtDay(r.startMs) },
-    { key: 'budget', label: 'Budget', num: true, sortValue: (r) => r.budget, render: (r) => fmt(r.budget) },
+    { key: 'ends', label: 'Ends', sortValue: (r) => r.endMs, render: (r) => fmtDay(r.endMs) },
+    { key: 'budget', label: 'Budget', num: true, sortValue: (r) => r.budget, render: (r) => (r.enforced ? fmt(r.budget) : <span className="hint">—</span>) },
     { key: 'consumed', label: 'Consumed', num: true, sortValue: (r) => r.used, render: (r) => fmt(r.used) },
-    { key: 'realisation', label: <>Realisation <InfoTip text="Consumed as a share of the project's budget. Final for a finished project; for a running one it is the share used so far, marked 'to date'." /></>, sortValue: (r) => r.realisation, render: (r) => <Realisation frac={r.realisation} finished={r.finished} /> },
-    { key: 'pace', label: <>Pace <span className="th-unit">slow · fast</span></>, sortValue: (r) => r.pace, render: (r) => <PaceBar pace={r.pace} /> },
-    { key: 'outlook', label: <>Budget outlook <InfoTip text="Projected from the recent job rate: when the budget would run out before the project ends, or how far it is already over." /></>, sortValue: (r) => (!r.enforced ? Infinity : r.used > r.budget ? -2 : r.runsOut ? r.runsOut : Infinity - 1), render: (r) => { if (!r.enforced) return <span className="hint" title="At this team's phase the budget is a target, not an enforced cap.">target only</span>; const over = Math.round(r.used - r.budget); if (over > 0) return <span className="tag warn">over by {fmt(over)}</span>; if (r.finished) return <span className="hint">ended, within budget</span>; return r.runsOut ? <span className="tag warn">runs out ~{fmtDay(r.runsOut)}</span> : <span className="hint">within budget</span> } },
+    { key: 'realisation', label: <>Realisation <InfoTip text="Consumed as a share of the project's budget. Final for a finished project, otherwise the share used so far." /></>, sortValue: (r) => r.realisation, render: (r) => (r.enforced ? <Realisation frac={r.realisation} finished={r.finished} /> : <span className="hint">—</span>) },
+    { key: 'pace', label: <>Pace <span className="th-unit">slow · fast</span></>, sortValue: (r) => r.pace, render: (r) => (r.enforced ? <PaceBar pace={r.pace} /> : <span className="hint">—</span>) },
+    { key: 'outlook', label: <>Budget outlook <InfoTip text="Projected from the recent job rate: when the budget would run out before the project ends, or how far it is already over." /></>, sortValue: (r) => (!r.enforced ? Infinity : r.used > r.budget ? -2 : r.runsOut ? r.runsOut : Infinity - 1), render: (r) => { if (!r.enforced) return <span className="hint">—</span>; const over = Math.round(r.used - r.budget); if (over > 0) return <span className="tag warn">over by {fmt(over)}</span>; if (r.finished) return <span className="hint">ended, within budget</span>; return r.runsOut ? <span className="tag warn">runs out ~{fmtDay(r.runsOut)}</span> : <span className="hint">within budget</span> } },
   ]
+  if (!isOps) columns.push({ key: 'action', label: '', sortValue: () => 0, render: (r) => (
+    <button className="btn" style={{ padding: '2px 8px', whiteSpace: 'nowrap' }} onClick={(e) => { e.stopPropagation(); requestIntent.value = { type: 'extension', fields: { projectId: r.id } }; onNav && onNav('requests') }} title="Ask the team lead for more time on this project">Request extension</button>
+  ) })
 
   return (
     <section>
@@ -117,7 +123,6 @@ function ProjectDetail({ id, onClose }) {
       </div>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 18, marginBottom: 10 }}>
         <Field label="Team">{team ? team.name : 'Organisation'}</Field>
-        <Field label="Priority"><PriorityInline p={p} /></Field>
         <Field label="Window">{p.start} to {p.end}</Field>
         <Field label="Budget">{fmt(p.budget)} GPU-h</Field>
         <Field label="Consumed">{fmt(p.used)} GPU-h</Field>
@@ -169,7 +174,6 @@ function Realisation({ frac, finished }) {
         <span style={{ width: Math.min(100, pct) + '%', background: over ? 'var(--warning)' : 'var(--good)' }} />
       </span>
       <span className={finished ? '' : 'hint'} style={{ minWidth: 34, textAlign: 'right' }}>{pct}%</span>
-      {!finished && <span className="th-unit">to date</span>}
     </span>
   )
 }

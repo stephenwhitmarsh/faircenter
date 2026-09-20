@@ -5,7 +5,7 @@ import { fmt } from '../format.js'
 import {
   teams, people, projectOwner, priorityTier, teamById, primaryTeam,
   personProjects, teamProjectsList,
-  personPoolHours, projectsPoolHours, poolBars, teamPhase, teamHue, governance,
+  personPoolHours, projectsPoolHours, poolBars, teamPhase, teamHue, governance, capacityHours, parameters,
 } from '../data/mockData.js'
 import DataTable from '../components/DataTable.jsx'
 import InfoTip from '../components/InfoTip.jsx'
@@ -24,8 +24,8 @@ function PriorityTag({ p }) {
 }
 
 // allocated budget split across the two pools: teams and person
-function PoolsCard() {
-  const bars = poolBars()
+function PoolsCard({ teamDraftTotal }) {
+  const bars = poolBars(120, teamDraftTotal)
   return (
     <div className="card">
       <div className="card-title">
@@ -59,13 +59,17 @@ export default function Budgets({ onNav }) {
 
   // the teams pool: the GPU-hours left after the person pool, divided across teams
   const teamsPoolHours = projectsPoolHours()
+  // over-subscription: budgets may be committed up to capacity x factor, so the teams pool can be
+  // filled past its nominal size into that headroom (see the over-subscription factor in Policy)
+  const oversub = parameters?.oversubscriptionFactor ?? 1
+  const teamsCeiling = Math.max(teamsPoolHours, Math.round(capacityHours() * oversub) - personPoolHours())
   const [, setRev] = useState(0) // bump to re-read team.budget after Apply
   const [tDraft, setTDraft] = useState(() => Object.fromEntries(teams.map((t) => [t.id, t.budget])))
   const resetTeams = () => setTDraft(Object.fromEntries(teams.map((t) => [t.id, t.budget])))
   // an edit can never push the running total past the teams pool; the rest holds what the other teams hold
   const setTeamBudget = (id, raw) => setTDraft((d) => {
     const others = teams.reduce((s, t) => s + (t.id === id ? 0 : (d[t.id] ?? t.budget)), 0)
-    const maxV = Math.max(0, teamsPoolHours - others)
+    const maxV = Math.max(0, teamsCeiling - others)
     return { ...d, [id]: Math.min(maxV, Math.max(0, Math.round(Number(raw) || 0))) }
   })
   const allocTeams = teams.reduce((s, t) => s + (tDraft[t.id] ?? t.budget), 0)
@@ -87,7 +91,7 @@ export default function Budgets({ onNav }) {
 
   return (
     <section>
-      <PoolsCard />
+      <PoolsCard teamDraftTotal={allocTeams} />
 
       <Section
         title="Team pools" meta={`${fmt(teamsPoolHours)} GPU-h · ${teams.length} teams · ${teamProjectsList.length} projects`}
@@ -130,35 +134,20 @@ export default function Budgets({ onNav }) {
                 <td><b>{pct(allocTeams, teamsPoolHours)}%</b> of pool</td>
               </tr>
               <tr>
-                <td colSpan={3}>{remainTeams < 0 ? 'Over-committed' : 'Remaining'}</td>
+                <td colSpan={3}>{remainTeams < 0 ? 'Over-subscribed' : 'Remaining'}</td>
                 <td className="num">{fmt(Math.abs(remainTeams))}</td>
-                <td>{pct(Math.abs(remainTeams), teamsPoolHours)}% of pool</td>
+                <td>{remainTeams < 0 ? `${pct(Math.abs(remainTeams), teamsPoolHours)}% past the pool (within the ${fmt(teamsCeiling)} ceiling)` : `${pct(Math.abs(remainTeams), teamsPoolHours)}% of pool`}</td>
               </tr>
             </tfoot>
           </table>
         </div>
         {canEdit && (
           <div className="apply-bar">
-            <button className="btn primary" disabled={!teamsDirty} onClick={applyTeams}>Apply team pools</button>
+            <button className="btn primary" disabled={!teamsDirty} onClick={applyTeams}>Apply</button>
             <button className="btn" disabled={!teamsDirty} onClick={resetTeams}>Discard</button>
-            <span className="hint">{teamsDirty ? 'Staged.' : 'No staged changes.'} The running total is capped by the teams pool.</span>
+            <span className="hint">{teamsDirty ? 'Staged.' : 'No staged changes.'} The pool can be filled past its size into the over-subscription headroom, up to the {fmt(teamsCeiling)} GPU-h ceiling.</span>
           </div>
         )}
-        <div className="subhead" style={{ marginTop: 12 }}>Team projects</div>
-        <div className="tbl-scroll">
-          <DataTable
-            initialSort={{ key: 'budget', dir: 'desc' }}
-            columns={[
-              { key: 'team', label: 'Team', sortValue: (p) => teamNameOf(p), render: (p) => teamNameOf(p) },
-              { key: 'name', label: 'Project', sortValue: (p) => p.name, render: (p) => p.name },
-              { key: 'budget', label: 'Budget', num: true, sortValue: (p) => p.budget, render: (p) => fmt(p.budget) },
-              { key: 'share', label: '% of pool', num: true, sortValue: (p) => p.budget, render: (p) => pct(p.budget, teamPoolTotal) + '%' },
-              { key: 'prio', label: 'Priority', sortValue: (p) => ({ high: 3, medium: 2, low: 1 }[priorityTier(p)] || 0), render: (p) => <PriorityTag p={p} /> },
-              { key: 'state', label: 'Dates', sortValue: (p) => p.startMs, render: (p) => `${p.start} to ${p.end}` },
-            ]}
-            rows={teamProjectsList}
-          />
-        </div>
       </Section>
 
       <Section

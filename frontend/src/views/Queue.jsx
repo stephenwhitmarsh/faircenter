@@ -23,6 +23,7 @@ export default function Queue() {
   const q = queueForecast()
   const running = runningJobsAt()
   const teamStandingOn = parameters.toggles.teamStanding // between-team ordering, on in the last roll-out phase
+  const lanesOn = parameters.toggles.lanes // priced lanes: show the Lane column only when the mechanism is on
   const capNow = effectiveGpus(period.nowMs)
   const inUse = running.reduce((s, j) => s + j.gpus, 0)
   const queuedGpus = q.reduce((s, j) => s + j.gpus, 0)
@@ -62,12 +63,11 @@ export default function Queue() {
               { key: 'team', label: 'Team', sortValue: (r) => teamOf(projectById(r.projectId)) || '', render: (r) => teamOf(projectById(r.projectId)) },
               { key: 'person', label: 'Person', sortValue: (r) => personById(r.personId)?.name || '', render: (r) => personById(r.personId)?.name || '—' },
               { key: 'gpus', label: 'GPUs', num: true, sortValue: (r) => r.gpus, render: (r) => fmt(r.gpus) },
-              { key: 'lane', label: 'Lane', sortValue: (r) => ({ fast: 3, standard: 2, bulk: 1 }[r.lane] || 0), render: (r) => laneTag(r.lane) },
-              { key: 'prio', label: <>Priority <span className="th-unit">in team</span> <InfoTip text="The project's priority tier, a tie-break within its own team." /></>, sortValue: (r) => TIER_RANK[priorityTier(projectById(r.projectId))] || 0, render: (r) => { const p = projectById(r.projectId); return p ? tierTag(p) : null } },
+              lanesOn && { key: 'lane', label: 'Lane', sortValue: (r) => ({ fast: 3, standard: 2, bulk: 1 }[r.lane] || 0), render: (r) => laneTag(r.lane) },
               { key: 'teamstd', label: <>Team standing <InfoTip text="A team's standing in the queue: higher standing lifts its jobs when the cluster is busy." /></>, sortValue: (r) => { const p = projectById(r.projectId); const t = p && p.teamId ? teamById(p.teamId) : null; return teamStandingOn && t ? t.standing : -1 }, render: (r) => { if (!teamStandingOn) return <span className="hint">n/a</span>; const p = projectById(r.projectId); const t = p && p.teamId ? teamById(p.teamId) : null; return t ? <span className="tag">{t.standing}</span> : <span className="hint">n/a</span> } },
               { key: 'waited', label: 'Waited', num: true, sortValue: (r) => r.waited, render: (r) => waited(r.waited) },
               { key: 'eta', label: 'Est. start', num: true, sortValue: (r) => (r.eta == null ? Infinity : r.eta), render: (r) => <span title={r.eta ? fmtDateTime(r.eta) : ''} className={r.eta == null ? 'hint' : ''}>{etaLabel(r.eta)}</span> },
-            ]}
+            ].filter(Boolean)}
             rows={shown}
           />
         </div>
@@ -85,9 +85,9 @@ export default function Queue() {
                 { key: 'team', label: 'Team', sortValue: (j) => teamOf(projectById(j.projectId)) || '', render: (j) => teamOf(projectById(j.projectId)) },
                 { key: 'person', label: 'Person', sortValue: (j) => personById(j.personId)?.name || '', render: (j) => personById(j.personId)?.name || '—' },
                 { key: 'gpus', label: 'GPUs', num: true, sortValue: (j) => j.gpus, render: (j) => fmt(j.gpus) },
-                { key: 'lane', label: 'Lane', sortValue: (j) => j.lane, render: (j) => laneTag(j.lane) },
+                lanesOn && { key: 'lane', label: 'Lane', sortValue: (j) => j.lane, render: (j) => laneTag(j.lane) },
                 { key: 'ends', label: 'Ends', sortValue: (j) => j.end, render: (j) => fmtDateTime(j.end) },
-              ]}
+              ].filter(Boolean)}
               rows={runShown.map((j) => ({ ...j, id: j.id }))}
             />
           </div>
