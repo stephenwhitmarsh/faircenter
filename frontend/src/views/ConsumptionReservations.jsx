@@ -113,7 +113,7 @@ function ScopePicker({ value, onChange }) {
   )
 }
 
-function ChartTooltip({ active, payload, label, colourByKey, capGpus }) {
+function ChartTooltip({ active, payload, label, colourByKey, capGpus, mode }) {
   if (!active || !payload || !payload.length) return null
   const isCap = (p) => p.dataKey === 'cap' || p.name === 'capacity'
   const capItem = payload.find(isCap)
@@ -135,7 +135,7 @@ function ChartTooltip({ active, payload, label, colourByKey, capGpus }) {
   const show = (v) => `${Math.round(v)} GPU · ${pct(v)}`
   return (
     <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12, padding: '8px 10px', minWidth: 210 }}>
-      <div style={{ color: 'var(--ink-2)', marginBottom: 5 }}>{fmtDateTime(label)}</div>
+      <div style={{ color: 'var(--ink-2)', marginBottom: 5 }}>{mode === 'daily' ? fmtDay(label) : fmtDateTime(label)}</div>
       {items.slice(0, 12).map((p) => (
         <div key={p.name} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, margin: '2px 0' }}>
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
@@ -420,7 +420,7 @@ export default function ConsumptionReservations() {
                 tickFormatter={(v) => fmt(v)} label={{ value: 'GPUs', angle: -90, position: 'insideLeft', fill: 'var(--muted)', fontSize: 11 }} />
               <YAxis yAxisId="pct" orientation="right" domain={[0, yMax]} tick={{ fill: 'var(--muted)', fontSize: 12 }} tickLine={false} axisLine={false} width={48}
                 tickFormatter={(v) => Math.round((v / (capGpus || 1)) * 100) + '%'} label={{ value: '% of capacity', angle: 90, position: 'insideRight', fill: 'var(--muted)', fontSize: 11 }} />
-              <Tooltip content={<ChartTooltip colourByKey={colourByKey} capGpus={capGpus} />} cursor={{ stroke: 'var(--ink-2)', strokeWidth: 1 }} />
+              <Tooltip content={<ChartTooltip colourByKey={colourByKey} capGpus={capGpus} mode={chart.mode} />} cursor={{ stroke: 'var(--ink-2)', strokeWidth: 1 }} />
               {fEnd > period.nowMs && (
                 <ReferenceArea yAxisId="gpu" x1={period.nowMs} x2={fEnd} fill="var(--ink-2)" fillOpacity={0.08} />
               )}

@@ -42,6 +42,7 @@ export default function PoolBars({ data, mode = 'both' }) {
               {alloc}
               {capTickLeft != null && <span style={{ position: 'absolute', top: -2, bottom: -2, left: capTickLeft + '%', width: 0, borderLeft: '2px solid var(--ink)' }} title="capacity (100%)" />}
               {ceilTickLeft != null && <span style={{ position: 'absolute', top: -2, bottom: -2, left: ceilTickLeft + '%', width: 0, borderLeft: '2px dashed var(--warning)' }} title={`over-subscription ceiling ${Math.round(ceilingPc)}%`} />}
+              {ceilTickLeft != null && <span style={{ position: 'absolute', top: -16, left: ceilTickLeft + '%', transform: 'translateX(-100%)', fontSize: 10, color: 'var(--warning)', whiteSpace: 'nowrap' }} title="over-subscription headroom">+{Math.round(ceilingPc - 100)}%</span>}
             </div>
           </div>
         )}
@@ -50,14 +51,14 @@ export default function PoolBars({ data, mode = 'both' }) {
       </div>
       {showAlloc && (
         <p className="hint" style={{ margin: '4px 0 0' }}>
-          Committed {Math.round(committedPc)}% of capacity{overPc > 0.4 ? ` — over-subscribed by ${Math.round(overPc)}%` : ''}. Ceiling {Math.round(ceilingPc)}% (over-subscription factor {(ceilingPc / 100).toFixed(2)}×).
+          Committed {Math.round(committedPc)}% of capacity{overPc > 0.4 ? `, over-subscribed by ${Math.round(overPc)}%` : ''}.
         </p>
       )}
       <div className="pool-legend">
         {pools.map((p) => (
           <span key={p.key} className="pool-legend-item">
             <i style={{ background: p.colour }} />
-            <b>{p.label}</b> {showAlloc ? `${fmt(p.budget)} GPU-h · ${Math.round(p.budgetPc)}% of capacity` : showActual ? `${fmt(p.used)} GPU-h · ${Math.round(p.usedPc)}%` : `${Math.round(p.targetPc)}%`}
+            <b>{p.label}</b> {showAlloc ? `${fmt(p.budgetGpus)} GPUs · ${Math.round(p.budgetPc)}% of capacity` : showActual ? `${fmt(p.used)} GPU-h · ${Math.round(p.usedPc)}%` : `${Math.round(p.targetPc)}%`}
           </span>
         ))}
       </div>

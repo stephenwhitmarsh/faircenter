@@ -1,37 +1,36 @@
-# Strategy
 
-## What this addresses
-A bare scheduler gives no way to decide who gets what, no shared view of use, no record of what was granted, and no way to weigh demand against the hardware. Without them, access is first come first served, and people over-ask, hold more than they need, or work around the queue.
-
-Deciding who gets what does not scale as a single, central act. As the organisation grows, those decisions have to be shared out: to operations for capacity and cost, to team leads within their teams, to direction for priorities. Each can only decide well with the right figures in front of them: current use, demand against the hardware, what is heading over budget, and what is waiting on approval. Managing that split of decisions, and giving each decision-maker what they need, matters as much as the budgets.
+As the organisation grows, computational resources require decisions to be shared out: to operations for capacity and cost, to team leads within their teams, to direction for priorities. Each can only decide well with the right figures: current use, demand against the capacity, what or who is heading over budget, and what or who is waiting on approval. Managing that split of decisions, and giving each decision-maker what they need, is what the faircenter provides when placed within the strategy.
+Second, best practices require a clear policy leverage, that can be tuned to an evolving context, while remaining transparent and fair. This would also require change, and change management, and careful rollout. The app provides this with a perspective of policy phases.
 
 ## The end state
-The aim is a governed allocation the organisation can act on. Every team, project and person works within a budget, a share of GPU time over a period. Everyone can see use, budgets, reservations and the rules behind them. Changes go through requests to a named approver. Each decision sits with whoever holds the information to make it, and the app gives them the figures to decide and to escalate. Most work has moved from individual use into funded team projects, with a small person pool kept for exploratory work.
+The aim is a governed allocation the organisation can act on, with staff following practices that align with the priorities of the organization, and create a sense of fairneses between staff to uphold moral and allow planning and acceptance of limits and decisision.  Every team, project and person works within a budget, a share of GPU resources, either as a rate, or a summed budget (GPU-h). Changes to budgets and priorities are available - and expected - and go through requests to a named approver. Each decision sits with whoever holds the information to make it, and the app gives them the figures to decide and to escalate. It is expected that most work will move from individual use into team projects, with a small person pool kept for exploratory work.
 
 ## Phasing
 The budgets come in over phases. For an engineer each phase opens a new place to draw budget from and adds the cap that comes with it, so a team gains a larger, shared source as it takes on more of its own planning. Teams move through the phases one at a time. Each phase is trialled with a few teams, and once it holds they move on and others follow, so a settled team can advance while a fast-moving one stays at an earlier phase.
+
+- Phase 1 only **measures** what happens: whose jobs run, how the cluster fills through the week, and how long jobs wait in the cue.
+- Phase 2 creates **individual budgets,** while keeping team budgets open. This is where sustained work moves off the person pool onto the team, run by the team lead as one coarse envelope. Priority lanes open, as well as the possibility to reserve GPUs.
+- Phase 3 creates **team budgets** according to capacity and distribution.
+- Phase 4 opens the possibility to define **project budgets** within the team pool. Its planning can also pass to the project lead, including requests, reservations and priorities within the budget.
+- Phase 5 defines **team priorities**, so that in a stand-off a priority team takes the cluster. If needed, priorities can also be balanced with those of projects (to be implemented).
+
 
 ```mermaid
 graph TD
 
   p1([phase 1:<br/>measure]) --> p2([phase 2:<br/>person budgets])
-  p2 --> p3([phase 3:<br/>team pools])
+  p2 --> p3([phase 3:<br/>team budgets])
   p3 --> p4([phase 4:<br/>project budgets])
-  p4 --> p5([phase 5:<br/>cross-team standing])
+  p4 --> p5([phase 5:<br/>team priorities])
 ```
 
-The first phase adds no budgets. It measures what happens: whose jobs run, how the cluster fills through the week, and how long work waits. This record sizes every later phase.
-
-The second phase opens a personal budget for each person from the person pool and caps individual use at it. It is the first enforced limit, kept while most work is still individual. Priority stays flat and every job runs at the same urgency, so the cluster shares evenly and budget size carries the weight.
-
-The third phase opens the team pool. An engineer now runs a project's work against the team's shared pool rather than a personal allowance, and the cap is the team total, so the team's projects draw that pool freely until it is used up. This is where sustained work moves off the person pool onto the team, run by the team lead as one coarse envelope sized from recent use rather than a figure per project. As it happens the person pool's share falls and the teams pool grows to match.
-
-The fourth phase opens a budget for each project, carved from the team pool, and caps the project at it. A project gains a share it can rely on instead of competing freely with its siblings, and its planning passes to the project lead: requests, reservations and priority within the budget. Priced lanes open here too, so a project can spend its own budget faster to run sooner, and only project work can buy that urgency, which keeps funded projects ahead of best-effort personal work. It is added only where a team needs the finer grain, not imposed everywhere.
-
-The fifth phase opens no new budget. It gives teams standing relative to one another, so standing arbitrates between teams when the cluster is contended and a strong project can outrank a weaker one in a more favoured team.
-
 ## Scalability
-The organisation is growing in three ways at once: more people and teams, more demand on the cluster, and eventually more hardware. The scheme addresses the first two directly and makes the third a decision it can inform rather than one it makes.
+The organisation is growing in three ways at once: 
+- more people and teams
+- more demand on the cluster
+- more hardware. 
+
+The strategy and policy addresses the first two directly and informs the third.
 
 Churn is where it helps most. Because allocation keys to the project rather than the org chart, and a project carries its own budget and history, teams can split and merge and people can move without stranding budgets, which matters when reorganisations come every few weeks. Governance load scales with the number of funded projects, not with headcount, since personal work is self-service and needs no approval, so a jump in people does not bring a matching jump in approvals.
 

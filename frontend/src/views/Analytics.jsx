@@ -17,7 +17,7 @@ const HORIZONS = [{ m: -1, label: 'None' }, { m: 6, label: '6m' }, { m: 12, labe
 const HOURS_MONTH = (365.25 / 12) * 24 * 3600 * 1000
 
 // retained across view switches
-const memo = { kpiKeys: ['util'], gran: 'month', cmpA: null, cmpB: null, showForecast: true, method: 'linear', lead: 3, lookback: 6, horizon: 6 }
+const memo = { kpiKeys: ['wait'], gran: 'month', cmpA: null, cmpB: null, showForecast: true, method: 'linear', lead: 3, lookback: 6, horizon: 6 }
 
 export default function Analytics({ onNav }) {
   const [kpiKeys, setKpiKeys] = useState(memo.kpiKeys)
@@ -176,7 +176,7 @@ export default function Analytics({ onNav }) {
       {/* ---- resource outlook: the acquisition decision ---- */}
       <div className="card">
         <div className="card-title" style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
-          <span>Resource outlook <span className="th-unit">average GPUs · demand vs capacity</span></span>
+          <span>Resource outlook <span className="th-unit">average GPUs · utilisation vs capacity</span></span>
           <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center', fontWeight: 400, fontSize: 13 }}>
             <span className="hint">Procurement lead time</span>
             <span className="numin"><input type="number" min="0" max="24" step="1" value={lead} onChange={(e) => setLead(Math.max(0, Number(e.target.value) || 0))} style={{ width: 54 }} /><span className="numin-suffix">months</span></span>
@@ -199,9 +199,9 @@ export default function Analytics({ onNav }) {
               {showForecast && <Area dataKey="bandSpan" stackId="band" stroke="none" fill="#eb6834" fillOpacity={0.13} isAnimationActive={false} legendType="none" name="demand range" />}
               <Line type="stepAfter" dataKey="capacity" name="Capacity" stroke="var(--ink-2)" strokeWidth={2} dot={false} isAnimationActive={false} />
               <Line type="stepAfter" dataKey="threshold" name={`${st.thresholdPct}% threshold`} stroke="var(--ink-2)" strokeWidth={1} strokeDasharray="2 3" dot={false} isAnimationActive={false} />
-              <Line type="monotone" dataKey="committed" name="Committed (projects)" stroke="#1baf7a" strokeWidth={2} dot={false} isAnimationActive={false} />
-              <Line type="monotone" dataKey="use" name="Realised demand" stroke="#eb6834" strokeWidth={2} dot={false} isAnimationActive={false} connectNulls />
-              {showForecast && <Line type="monotone" dataKey="useFc" name="Realised (forecast)" stroke="#eb6834" strokeWidth={2} strokeDasharray="5 4" dot={false} isAnimationActive={false} connectNulls />}
+              <Line type="monotone" dataKey="committed" name="Planned" stroke="#1baf7a" strokeWidth={2} dot={false} isAnimationActive={false} />
+              <Line type="monotone" dataKey="use" name="Utilisation" stroke="#eb6834" strokeWidth={2} dot={false} isAnimationActive={false} connectNulls />
+              {showForecast && <Line type="monotone" dataKey="useFc" name="Utilisation (forecast)" stroke="#eb6834" strokeWidth={2} strokeDasharray="5 4" dot={false} isAnimationActive={false} connectNulls />}
               {showForecast && firstForecast && <ReferenceLine x={firstForecast.period} stroke="var(--ink)" strokeOpacity={0.35} strokeDasharray="2 3" label={{ value: 'now', fill: 'var(--ink-2)', fontSize: 10, position: 'insideTopRight' }} />}
               {showForecast && st.crossThresh && <ReferenceLine x={st.crossThresh} stroke="var(--critical)" strokeOpacity={0.7} label={{ value: 'hits ' + st.thresholdPct + '%', fill: 'var(--critical)', fontSize: 10, position: 'insideTopLeft' }} />}
             </ComposedChart>
@@ -209,8 +209,8 @@ export default function Analytics({ onNav }) {
         </div>
         <div className="legend-grouped"><div className="lg-row">
           <span className="lg-item"><i className="swatch" style={{ background: 'var(--ink-2)' }} />Capacity</span>
-          <span className="lg-item"><i className="swatch" style={{ background: '#1baf7a' }} />Committed entitlement</span>
-          <span className="lg-item"><i className="swatch" style={{ background: '#eb6834' }} />Realised demand{showForecast ? ' (solid actual, dashed forecast, band = low–high)' : ' (actual)'}</span>
+          <span className="lg-item"><i className="swatch" style={{ background: '#1baf7a' }} />Planned</span>
+          <span className="lg-item"><i className="swatch" style={{ background: '#eb6834' }} />Utilisation{showForecast ? ' (solid actual, dashed forecast, band = low–high)' : ' (actual)'}</span>
         </div></div>
       </div>
 
@@ -219,6 +219,7 @@ export default function Analytics({ onNav }) {
         <div className="card-title">
           {multi ? 'Indicators over time' : `${kpi.label} over time`}
           {multi && <span className="th-unit" style={{ marginLeft: 8 }}>{multiUnit != null ? `${multiUnit || 'count'} · hover for values` : 'scaled to fit · hover for values'}</span>}
+          <span className="th-unit" style={{ marginLeft: 8 }}>GPU-h values are per {gran}</span>
         </div>
         <div className="controls" style={{ marginTop: 0, alignItems: 'flex-start' }}>
           <label style={{ paddingTop: 5 }}>Indicators</label>
@@ -370,8 +371,8 @@ function ResourceTip({ active, payload, label, thresholdPct, showForecast }) {
   const items = [
     { name: 'Capacity', v: row.capacity, color: 'var(--ink-2)' },
     { name: `${thresholdPct}% threshold`, v: row.threshold, color: 'var(--ink-2)' },
-    { name: 'Committed (projects)', v: row.committed, color: '#1baf7a' },
-    { name: isFc ? 'Realised (forecast)' : 'Realised demand', v: realised, extra: range, color: '#eb6834' },
+    { name: 'Planned', v: row.committed, color: '#1baf7a' },
+    { name: isFc ? 'Utilisation (forecast)' : 'Utilisation', v: realised, extra: range, pct: (realised != null && row.capacity) ? Math.round((realised / row.capacity) * 100) : null, color: '#eb6834' },
   ].filter((it) => it.v != null).sort((a, b) => b.v - a.v)
   return (
     <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12, padding: '8px 10px', minWidth: 200 }}>
@@ -379,7 +380,7 @@ function ResourceTip({ active, payload, label, thresholdPct, showForecast }) {
       {items.map((it) => (
         <div key={it.name} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, margin: '2px 0' }}>
           <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><i style={{ width: 9, height: 9, borderRadius: 2, background: it.color, display: 'inline-block' }} />{it.name}</span>
-          <span style={{ fontVariantNumeric: 'tabular-nums' }}>{fmt(it.v)}{it.extra ? <span className="th-unit">{it.extra}</span> : null} GPU</span>
+          <span style={{ fontVariantNumeric: 'tabular-nums' }}>{fmt(it.v)}{it.extra ? <span className="th-unit">{it.extra}</span> : null} GPU{it.pct != null ? <span className="th-unit"> · {it.pct}%</span> : null}</span>
         </div>
       ))}
     </div>

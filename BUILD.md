@@ -1,8 +1,6 @@
-# Build, deploy and architecture
-How faircenter is built, run and published, and the architecture the live system needs behind the browser-only proof of concept. No build setting is edited inside component code. Every one lives in a config file listed below.
 
 ## Stack
-The frontend is a React 18 app built with Vite 5, its charts drawn with Recharts and hand-built SVG (see the [README](README.md)). There is no build step beyond Vite, no CSS framework, and no test runner.
+The frontend is a React 18 app built with Vite 5, its charts drawn with Recharts and hand-built SVG. There is no build step beyond Vite, no CSS framework, and no test runner.
 
 ## Config files
 - `frontend/package.json` holds the dependencies and three scripts: `dev`, `build` and `preview`.
@@ -32,20 +30,13 @@ Two settings the workflow depends on, set once:
 - GitHub Pages enabled with the source set to GitHub Actions (Settings, then Pages).
 - A public repository, since Pages on the free plan does not serve private repositories.
 
-## Where customisation goes
-Any change to how the app is built or served belongs in a config file above, not in component code. The base path is the clearest case: it is set once in `vite.config.js` and read by every asset URL, rather than hard-coded anywhere in the app.
-
 ## The live system
-The proof of concept runs entirely in the browser on invented data with a simulated scheduler, so it needs no backend and GitHub Pages can host it. The live system adds one: a Django service with Django REST Framework over PostgreSQL, and a scheduler adapter, a small module wrapping sacctmgr, scontrol and sacct behind the app's own interface, for which the proof of concept's simulator stands in. A scheduled task refreshes effective standing from recent use and reconciles the Notion import. Django's own users carry authentication mapped to Notion, with the roles below as permissions.
-
-Hosting follows the same split. GitHub Pages hosts the static demo, since the synthetic data and simulated scheduler run in the browser. The live backend has to reach SLURM and Notion, so it runs on a machine near the cluster, most likely an ICM-hosted server, serving the front end from there or from Pages against that backend.
+The proof of concept runs in the browser on synthetic data with a simulated scheduler, so it needs no backend and GitHub Pages can host it. The live system would require a Django service with Django REST Framework over PostgreSQL, and a scheduler adapter, a small module wrapping sacctmgr, scontrol and sacct behind the app's own interface. A scheduled task would refresh effective standing (priority) from recent use and reconciles the Notion import. Django would map users to to Notion, with the roles below as permissions.
 
 ### Where the app sits against the scheduler
-The cluster runs SLURM, with the app behind an adapter so another scheduler could be substituted later. Only the app's own service account makes scheduler changes. People act through the app and never hold scheduler permissions.
+The cluster runs SLURM, with the app behind an adapter so another scheduler could be substituted later. Only the app's own service account makes scheduler changes. People act through the app without scheduler permissions.
 
-The app extracts data per job. SLURM's accounting database (read with sacct) holds one finalised record per job with its submit, start and end times, GPU allocation, account, user and QOS. The app stores these and derives every curve from them, so the natural resolution is the job event and the load series is irregular. For work still running, whose accounting record is not final until it ends, the app also polls the live queue (squeue/scontrol) on a short interval to capture in-flight allocations. This job-level history also makes forecasting tractable: with arrival times, sizes, durations and lanes per project and person, demand becomes a time series a trained model can predict and tune parameters against, rather than the recent-rate projection the proof of concept shows.
-
-On a cluster where SLURM has already been running, the first phase does not start from an empty record: the accounting database still holds the same job history. The site's `PurgeJobAfter` in `slurmdbd.conf` sets how far back it reaches. Where purging was never configured, SLURM keeps individual job records indefinitely, often for the life of the cluster. Where it is set, SLURM removes records older than the window, but only after rolling them up into per-association usage aggregates (hourly, then daily, then monthly, the tables `sreport` reads), and usually keeps those rollups far longer. So the fine-grained job stream stays available for at least the retention window and often since the cluster was commissioned, and the coarse usage picture, GPU-hours by account, user and period, reaches back further still. Two conditions gate this: accounting must have been enabled (a `slurmdbd` with `AccountingStorageType=accounting_storage/slurmdbd`, not `accounting_storage/none`), and GPU detail requires `gres/gpu` in `AccountingStorageTRES`, since jobs recorded before GPUs were tracked as a TRES carry no GPU count. So the shared picture and the first budget sizing can draw on real history from day one rather than waiting a period to accumulate it.
+The app extracts data per job. SLURM's accounting database (read with sacct) holds one finalised record per job with its submit, start and end times, GPU allocation, account, user and QOS. The app stores these and derives every curve from them, so the natural resolution is the job event and the load series is irregular. For work still running, whose accounting record is not final until it ends, the app also polls the live queue (squeue/scontrol) on a short interval to capture in-flight allocations. This job-level history also makes forecasting tractable: with arrival times, sizes, durations and lanes per project and person, demand becomes a time series a trained model can predict and tune parameters against, rather than the recent-rate projection the proof of concept shows. On a cluster where SLURM has already been running, the first phase does not start from an empty record: the accounting database still holds the job history. 
 
 ```mermaid
 graph TD
@@ -56,9 +47,7 @@ graph TD
 ```
 
 ### Budgets on the account tree
-Every budget is a `GrpTRESMins` limit on one node of SLURM's accounting tree, and the roll-out phases only decide which nodes carry a limit, not where a job is charged.
-
-The tree is built from the Notion memberships and does not change with the phase. The person pool is one branch, with each person a user association under it. The teams pool is the other, shaped as a team account, then a project account under it, then the people as user associations under the project. A job is submitted against an account, and that account decides which branch it draws from: a person's exploratory work charges their association in the person pool, and their funded work charges the project account that already sits under its team. Because the project association exists from the first import, project work charges its project account whether or not a project budget is set, which is why the app can show consumed per project throughout and add the cap only later.
+Every budget is a `GrpTRESMins` limit on one node of SLURM's accounting tree. The tree is built from the Notion memberships (which might need to curation). The person pool is one branch, with each person a user association under it. The teams pool is the other, shaped as a team account, then a project account under it, then the people as user associations under the project. A job is submitted against an account, and that account decides which branch it draws from.
 
 ```mermaid
 graph TD
@@ -75,7 +64,47 @@ A phase turns a limit on at one level. Person budgets place it on the user assoc
 
 The transition into project budgets is additive. With team budgets on and project budgets off, only the team account carries a limit, so the team total is capped and its projects share that pool freely. Turning project budgets on adds a limit to each project account, sized to fit inside the team's, and the team limit stays where it was as the outer ceiling. Nothing is re-declared and no budget is removed. Switching project budgets off again clears the project limits and leaves the team limit doing the work alone.
 
-The one place an account changes is graduation. When sustained personal work is taken on as a team project, its jobs start being submitted against the project account under the team instead of against the person pool, which is a new association rather than a budget being moved, and the person's still-exploratory work keeps charging the person pool. A person with team membership but no project has no project account to charge, so their team work goes against a team-level default account until they join or start a project.
+### Parameters
+- `budget` is the cap on how much a pool or project may consume over a period, in weighted GPU-hours, held as a `GrpTRESMins` limit on the person, project or team entry in the account tree.
+- `budget enforcement` is the set of switches that decide where budgets bind: person, team and project, each an independent `GrpTRESMins` cap. They are cumulative and coexist, and the roll-out enables them in turn, team pools before per-project budgets.
+- `person pool share` is the fraction of the capacity the cluster offers set aside for the person pool, the rest going to the teams pool. Operations sets it, and it defaults from the roll-out phase, starting large and falling towards a small residual as the roll-out advances. The person pool's size in GPU-hours is this share of capacity, and the teams pool takes the remainder.
+- `over-subscription factor` sets how far budgets may be committed against capacity: below 1 holds capacity back, 1 commits to it, above 1 over-commits. A grant is allowed only while `committed demand ≤ capacity × over-subscription factor` over every window. It defaults to 1.05.
+- `time-of-use weight` multiplies the cost of running by time of day, for example 1.0 in office hours and 0.5 off-hours.
+- `lane priority` is the queue order a lane adds, so a rush job starts sooner and a batch job waits.
+- `lane factor` is what that speed costs: the multiplier on how fast the job draws its budget, for example 2.0 for rush, 1.0 for normal, 0.5 for batch.
+- `standing` is the relative weight that sets order under contention, held per team; a project inherits its team's standing.
+- `age` is the priority a job gains from waiting, rising the longer it sits so that no job waits behind newer arrivals forever, with a scheduler setting controlling how strongly it counts.
+- `budget drawn` is how fast a running job consumes its budget: `budget drawn = GPU-hours × time-of-use weight × lane factor`.
+- `expected consumption` forecasts end-of-period use from the project's recent rate, capped at its remaining budget. The app flags a project on track to reach its cap before the period ends, with the date it would. In the proof of concept the rate is a smoothed recent average. Later a model trained on past use replaces it.
+
+### The controls, mapped to SLURM
+The app presents a handful of controls, several of them combinations of lower-level SLURM settings, so there are more settings underneath than the app exposes. A budget is a ceiling on total use, held as a `GrpTRESMins` limit in GPU-minutes on an entry in the accounting tree. The enforcement switch chooses where that limit sits: on the user's association for a person, the project account for a project, the team account for a team. The limits nest and coexist, and SLURM holds a job to the tightest that applies up the tree, so the roll-out enables them cumulatively. `AccountingStorageEnforce=limits` makes them bind. SLURM carries standing, which decides order under contention, as fairshare with a base account priority. A lane is a QOS carrying both an added priority and a usage factor, so running faster draws the budget down faster. A reservation locks specific GPUs for a window. The app reads actual use back from SLURM accounting (sacct) and applies time-of-use pricing through TRESBillingWeights.
+
+```mermaid
+graph LR
+
+  budget([budget: volume]) -->|how much| cap([qos grptresmins cap])
+  standing([standing: order]) -->|who goes first| fairshare([fairshare + base priority])
+  lane([lane: urgency]) -->|per job| qos([qos priority + usagefactor])
+  timeofuse([time of use]) -->|cheaper off-hours| billing([tresbillingweights])
+  reservation([reservation]) -->|guaranteed slot| resv([slurm reservation])
+```
+
+Budget and standing (priority) are independent. An account can have generous standing and a small budget, so it starts quickly but cannot run for long, or little standing and a large budget, so it waits but can run a great deal once it starts. Standing steers the order of the queue. It does not reserve a fixed share of GPUs, and use converges towards the standing ratios only while everyone is competing, so a standing that works out to forty percent is a tendency under demand, not a fixed forty percent at any moment.
+
+Two controls move more than one thing at once. A faster lane raises both a job's order and its cost, so a job that jumps the queue spends its budget faster, and the speed pays for itself from the same pool. Time of use moves cost alone: the same work run off-hours draws less budget with no change to its order. A job draws, roughly,
+
+```text
+budget drawn = GPU-hours × time-of-use weight × lane factor
+```
+
+and its place in the queue is
+
+```text
+job priority = account standing + lane priority + age
+```
+
+where account standing is what the managers set and lane priority is what the engineer picks.
 
 ### Data model
 The entities the app stores, beyond what it reads live from the scheduler:
@@ -87,7 +116,7 @@ The entities the app stores, beyond what it reads live from the scheduler:
 - Reservations, each holding GPUs for a window for a named holder.
 - Jobs, one record each from the scheduler's accounting database: submit, start and end time, GPU (TRES) count, owning project and person, and lane. The app derives every load curve from these, and the concurrent GPUs at an instant is the sum over jobs running then, so the series is an irregular step function.
 - Usage records read from the scheduler, by account, lane, GPU-hours and time.
-- Change requests, each with a type (new project, budget change, priority change), a status, and the approver it is routed to.
+- Change requests, each with a type (new project, budget change, standing change), a status, and the approver it is routed to.
 - Parameters, the policy values (see [POLICY.md](POLICY.md)), versioned with the date each value took effect, so the app can explain a past decision and read an indicator against the settings in force when it was measured.
 - Period indicators, computed and retained per period, so the app can compare performance over time and against parameter changes.
 
@@ -95,7 +124,7 @@ The entities the app stores, beyond what it reads live from the scheduler:
 Reporting relies on being able to rebuild any past state, so the app keeps structure and allocations versioned rather than overwritten. This is the app's own storage, not a SLURM feature. It can use effective-dated rows, where each membership or allocation carries a valid-from and valid-to and a change closes the old row and opens a new one, or an append-only log it derives the current state from. Where a reorganisation leaves something unattached, the app falls back: operations funds a project with no team directly until it is reassigned, and a person with no project has only their personal budget.
 
 ### Source of truth and identity
-For the proof of concept, Notion holds people, projects, teams and their composition. The app keys everything to its own stable identifiers mapped to Notion records, so a rename or a move updates a link rather than breaking it. Identity comes from Notion where possible, otherwise from a name, email and password matched to the Notion records. Whether projects are defined in the app or in Notion, and whether the app reads Notion through its API or directly, are still open.
+For the proof of concept, the assumption is that Notion holds people, projects, teams and their composition. The app keys everything to its own stable identifiers mapped to Notion records, so a rename or a move updates a link rather than breaking it. Identity comes from Notion where possible, otherwise from a name, email and password matched to the Notion records. Whether projects are defined in the app or in Notion, and whether the app reads Notion through its API or directly, are still open.
 
 ### Importing associations
 The app is built around three relationships, all imported from Notion.

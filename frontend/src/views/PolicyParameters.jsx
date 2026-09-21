@@ -17,13 +17,11 @@ const LANE_ON = { bulk: { factor: 0.7, priority: -50 }, standard: { factor: 1.0,
 
 // Snapshot of the editable numbers, staged locally until Apply.
 function snapshot() {
-  const { lanes, timeOfUse, weights, oversubscriptionFactor, pools } = parameters
+  const { lanes, timeOfUse, oversubscriptionFactor, pools } = parameters
   return {
     lane: Object.fromEntries(Object.keys(lanes).map((k) => [k, { factor: lanes[k].factor, priority: lanes[k].priority }])),
     touOffice: timeOfUse.office,
     touOff: timeOfUse.off,
-    laneVsProject: weights.accountVsLane,
-    teamVsProject: weights.teamVsProject,
     personPct: Math.round((pools?.personPct ?? 0) * 100),
     oversub: oversubscriptionFactor,
   }
@@ -87,8 +85,6 @@ export default function PolicyParameters() {
     }
     parameters.timeOfUse.office = draft.touOffice
     parameters.timeOfUse.off = draft.touOff
-    parameters.weights.accountVsLane = draft.laneVsProject
-    parameters.weights.teamVsProject = draft.teamVsProject
     parameters.pools.personPct = draft.personPct / 100
     parameters.oversubscriptionFactor = draft.oversub
     parameters.toggles = { ...parameters.toggles, ...flags }
@@ -145,8 +141,6 @@ export default function PolicyParameters() {
             ))}
             <ValueRow label="Time of use, office hours" k="touOffice" draft={draft} editable={editable} step={0.05} suffix="×" onChange={setField} note="weight on budget drawn in office hours" />
             <ValueRow label="Time of use, off hours" k="touOff" draft={draft} editable={editable} step={0.05} suffix="×" onChange={setField} note="weight on budget drawn off-hours" />
-            <ValueRow label="Lane vs project weight" k="laneVsProject" draft={draft} editable={editable} step={0.05} onChange={setField} note="how far a lane can lift a job above its project standing" />
-            <ValueRow label="Team vs project weight" k="teamVsProject" draft={draft} editable={editable} step={0.05} onChange={setField} note="blend of team standing and project standing" />
           </tbody>
         </table>
 
