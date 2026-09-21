@@ -1,5 +1,5 @@
 # faircenter
-faircenter is a proof of concept for sharing GPU time across a research organisation, with clear budgets, visible use, and allocation decisions people can stand behind. Questions and ideas are welcome: [get in touch](mailto:stephen.whitmarsh@proton.me).
+faircenter is a proof of concept application for sharing GPU time across a research organisation, with clear budgets, visible use, and allocation decisions people can stand behind. Questions and ideas are welcome: [get in touch](mailto:stephen.whitmarsh@proton.me).
 
 ## Why it exists
 On a shared cluster with no allocation policy, access is first come first served. Direction cannot see where the GPUs go, and a project cannot tell in advance whether the resources it needs will be free. The scheduler records raw usage after the fact, but nothing turns it into a picture the organisation can act on, so people over-ask, hold more than they need, or work around the queue. faircenter turns use, budgets and requests into one shared, current picture, and gives each role the controls to act on it.
