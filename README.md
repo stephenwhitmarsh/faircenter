@@ -15,7 +15,7 @@ graph BT
 ```
 
 ## Fit within the existing ecosystem
-pfaircenter aims to interface with existing tools. E.g., People and projects are imported from Notion, SLURM implements scheduling and standing, and communication and done via slack. Identity is assumed to come from single sign-on.
+faircenter aims to interface with existing tools. E.g., People and projects are imported from Notion, SLURM implements scheduling and standing, and communication and done via slack. Identity is assumed to come from single sign-on.
 
 ```mermaid
 graph TD
