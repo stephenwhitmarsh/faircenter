@@ -15,7 +15,7 @@ graph BT
 ```
 
 ## Fit within the existing ecosystem
-faircenter aims to interface with existing tools. E.g., People and projects are imported from Notion, SLURM implements scheduling and standing, and communication and done via slack. Identity is assumed to come from single sign-on.
+faircenter aims to interface with existing tools. E.g., People and projects are imported from Notion, SLURM implements scheduling and standing, and communication is done via slack. Identity is assumed to come from single sign-on.
 
 ```mermaid
 graph TD
@@ -39,7 +39,7 @@ graph TD
 ```
 
 ## Documentation
-The [manual](MANUAL.md) walks through the app tab by tab. The [policy](POLICY.md) sets out the policies and parameters values, introducing a distribution of GPU "budget" across persons, teams and projects. [strategy](STRATEGY.md) explained how the policy could be phased in over time, anticipating a gradual organization twards team and project-oriented budgets, while minimizing administrative burden and maximizing both transparancy and decision-making at each level, and inclkudes a discussion of risks.
+The [manual](MANUAL.md) walks through the app tab by tab. The [policy](POLICY.md) sets out the policies and parameters values, introducing a distribution of GPU "budget" across persons, teams and projects. [strategy](STRATEGY.md) explained how the policy could be phased over time, anticipating a gradual organization towards team and project-oriented budgets, minimizing administrative burden and maximizing transparancy and decision-making at each level.
 
 ## Where it lives
 - Demo: https://stephenwhitmarsh.github.io/faircenter/
