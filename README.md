@@ -1,9 +1,9 @@
 # faircenter
-faircenter is a proof of concept application for fair and transparant sharing of GPU time across a research organisation or department. 
-For researchers, it ensures a clear view on their resource availability (budget) and policies, and the mechanisms to (de)prioritize work according to their needs. 
+faircenter is a proof of concept application for fair and transparent sharing of GPU time across a research organisation or department.
+For researchers, it ensures a clear view on their resource availability (budget) and policies, and the mechanisms to (de)prioritise work according to their needs.
 For team leaders, it provides flexibility of resource allocation within their team's projects when needed.
-For managers, it provides clear overview of resources load over time, prividing policy mechanisms and parameters to optimize usage according to operational strategies, and supports signalling requirments for investment.
-For executives, it provides a clear view and lability to set priorities, and receive timely summary statistics, and runway to hardware capacity and investment.  
+For managers, it provides a clear overview of resource load over time, with the policy mechanisms and parameters to optimise usage against operational strategy, and support for signalling investment needs.
+For executives, it provides a clear view and the ability to set priorities, timely summary statistics, and runway from hardware capacity to investment.
 
 ```mermaid
 graph BT
