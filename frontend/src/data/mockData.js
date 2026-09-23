@@ -325,11 +325,23 @@ export const lanes = {
 }
 export const parameters = {
   oversubscriptionFactor: 1.05,
-  timeOfUse: { office: 1.0, off: 0.5 }, weights: { accountVsLane: 1.0, teamVsProject: 0.5 }, lanes,
+  timeOfUse: { office: 1.0, off: 0.5 }, lanes,
   toggles: { lanes: false, timeOfUse: true, headroom: true, oversubscription: true, teamStanding: false, enfPerson: true, enfProject: false, enfTeam: true },
   // top-level split of governed capacity between the person pool and the projects pool.
   // personPct is set by operations and defaults from the rollout phase (see GOV_PHASES).
   pools: { personPct: (GOV_PHASES.find((g) => g.n === governance.phase) || GOV_PHASES[0]).personPct },
+}
+
+// Team pool grants: operations hands each team a slice of the teams pool. t.budget above is the team's
+// project demand; here it becomes the granted pool, scaled so the teams pool is nearly fully allocated
+// (an active org), leaving a small uncommitted tail. Per-project budgets are unchanged, so a team holds
+// headroom above the sum of its projects' current budgets.
+{
+  const teamsPoolH = Math.round(capacityHours() * (1 - (parameters.pools?.personPct ?? 0)))
+  const demand = teams.map((t) => t.budget)
+  const totalDemand = demand.reduce((a, b) => a + b, 0) || 1
+  const target = teamsPoolH * 0.9
+  teams.forEach((t, i) => { t.budget = Math.round((demand[i] / totalDemand) * target) })
 }
 export const requestsList = [
   { id: 'req-1', type: 'budget change', subject: 'Voxtral v3 +40,000 GPU-h', note: 'Final pre-training run is larger than planned after the tokenizer change; need the extra budget to finish before the release freeze.', requestedBy: people[0].name, routedTo: 'Operations', status: 'pending', warning: 'Would take the Voxtral budget past its limit.' },
@@ -432,12 +444,14 @@ export function poolBars(windowDays = 120, teamBudgetOverride = null) {
     { key: 'team', label: 'Teams', colour: 'var(--accent)', used: cons.team, targetFrac: tgt.team, budget: teamB },
     { key: 'person', label: 'Person', colour: '#9085e9', used: cons.person, targetFrac: tgt.person, budget: personB },
   ]
+  const periodH = (period.endMs - period.startMs) / HOUR
   const pools = defs.map((d) => ({
     ...d,
     usedPc: (d.used / capBase) * 100,
     targetPc: d.targetFrac * 100,          // the pool's policy share of capacity
     budgetPc: (d.budget / capAlloc) * 100, // committed budget as a share of capacity
     budgetSharePc: (d.budget / totalB) * 100, // share within the committed total (for the legend)
+    budgetGpus: Math.round(d.budget / periodH), // the pool as an average GPU headcount (period-free)
   }))
   const idlePc = Math.max(0, 100 - pools.reduce((s, p) => s + p.usedPc, 0))
   const committedPc = pools.reduce((s, p) => s + p.budgetPc, 0)
@@ -738,12 +752,9 @@ export function forecastSeries(projList, tNow, t1, keyOf, method = 'recent', spl
 function median(arr) { if (!arr.length) return 0; const a = [...arr].sort((x, y) => x - y); const m = Math.floor(a.length / 2); return a.length % 2 ? a[m] : (a[m - 1] + a[m]) / 2 }
 function monthRange(y, m) { return [Date.UTC(y, m, 1), Date.UTC(y, m + 1, 1)] }
 export const KPIS = [
-  { key: 'util', label: 'Utilisation', unit: '%', better: 'high' },
-  { key: 'capacity', label: 'Capacity', unit: 'GPUs', better: 'neutral' },
   { key: 'projects', label: 'Nr. of projects', unit: '', better: 'neutral' },
   { key: 'planned', label: 'Project budgets', unit: 'GPU-h', better: 'neutral' },
   { key: 'usedProj', label: 'Project budgets actualised', unit: 'GPU-h', better: 'neutral' },
-  { key: 'committed', label: 'Committed demand', unit: 'GPU-h', better: 'neutral' },
   { key: 'wait', label: 'Mean wait', unit: 'min', better: 'low' },
   { key: 'queued', label: 'Jobs queued > 1h', unit: '%', better: 'low' },
   { key: 'overBudget', label: 'Projects over budget', unit: '%', better: 'low' },
@@ -857,7 +868,7 @@ export function kpiSeries(cadence = 'month') {
     const plannedV = plannedProjBucket(b.t0, b.t1)
     const usedV = b.forecast ? null : usedProjBucket(b.t0, b.t1)
     const extra = {
-      capacity: Math.round(effectiveGpus(mid)),
+      capacity: Math.round(capacityHoursBetween(b.t0, b.t1)),
       projects: projectProjects.filter((p) => p.startMs < b.t1 && p.endMs > b.t0).length,
       planned: plannedV,
       committed: committedBucket(b.t0, b.t1),
